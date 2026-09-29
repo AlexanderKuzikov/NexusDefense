@@ -1,0 +1,1964 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NEXUS DEFENSE — массив башен II</title>
+<style>
+  :root{
+    --bg:#04060b;
+    --ink:#cfe6ff;
+    --dim:#5d7590;
+    --line:rgba(120,190,255,.16);
+    --panel:rgba(8,14,22,.82);
+    --accent:#ff4fd8;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);overflow:hidden}
+  body{
+    font-family:ui-monospace,"SF Mono",Consolas,"Roboto Mono","JetBrains Mono",monospace;
+    color:var(--ink);-webkit-font-smoothing:antialiased;user-select:none;cursor:default;
+  }
+  canvas{display:block}
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+  #hud > *{pointer-events:auto}
+  .vig{position:fixed;inset:0;pointer-events:none;z-index:2;
+    background:radial-gradient(ellipse 120% 90% at 50% 45%,transparent 35%,rgba(0,0,0,.55) 100%),
+      linear-gradient(180deg,rgba(4,6,11,.55) 0%,transparent 18%,transparent 78%,rgba(4,6,11,.7) 100%);}
+
+  header{position:absolute;top:20px;left:22px}
+  header h1{margin:0;font-size:15px;letter-spacing:.42em;font-weight:600;color:#eaf6ff;
+    text-shadow:0 0 18px rgba(255,79,216,.45)}
+  header .sub{margin-top:7px;font-size:10.5px;letter-spacing:.24em;color:var(--dim)}
+  header .bar{width:210px;height:2px;margin-top:11px;
+    background:linear-gradient(90deg,var(--accent),rgba(255,79,216,0));opacity:.75}
+
+  #panel{position:absolute;top:20px;right:20px;width:322px;background:var(--panel);
+    border:1px solid var(--line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%);
+    opacity:0;transform:translateX(14px);transition:opacity .3s,transform .3s;
+    max-height:calc(100% - 110px);overflow:auto;scrollbar-width:thin}
+  #panel.on{opacity:1;transform:none}
+  #panel::-webkit-scrollbar{width:5px}
+  #panel::-webkit-scrollbar-thumb{background:rgba(120,190,255,.25)}
+  .p-top{padding:14px 16px 12px;border-bottom:1px solid var(--line)}
+  .p-idx{font-size:10px;letter-spacing:.3em;color:var(--dim)}
+  .p-name{margin-top:5px;font-size:17px;letter-spacing:.12em;font-weight:600;color:#fff}
+  .p-ru{margin-top:3px;font-size:11.5px;color:var(--dim)}
+  .p-role{display:inline-block;margin-top:10px;padding:3px 9px;font-size:9.5px;letter-spacing:.2em;
+    border:1px solid currentColor;border-radius:1px;text-transform:uppercase;opacity:.95}
+  .p-body{padding:13px 16px 16px}
+  .p-desc{font-size:11.5px;line-height:1.72;color:#a9c6de}
+  .stats{margin-top:15px;display:grid;gap:9px}
+  .st{display:grid;grid-template-columns:78px 1fr 44px;align-items:center;gap:9px}
+  .st .k{font-size:9px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase}
+  .st .t{height:4px;background:rgba(255,255,255,.07);position:relative;overflow:hidden}
+  .st .t i{position:absolute;inset:0 auto 0 0;width:0;transition:width .5s cubic-bezier(.2,.9,.2,1)}
+  .st .v{font-size:10.5px;text-align:right;color:#dceaf7}
+  .p-note{margin-top:15px;padding:9px 11px;font-size:10.5px;line-height:1.65;
+    border-left:2px solid currentColor;background:rgba(255,255,255,.035);color:#bfd8ec}
+
+  #dock{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);display:flex;gap:8px;
+    align-items:center;flex-wrap:wrap;justify-content:center;max-width:min(980px,calc(100% - 40px))}
+  .btn{font:inherit;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink);
+    background:rgba(10,18,28,.72);border:1px solid var(--line);padding:8px 13px;cursor:pointer;
+    transition:.18s;backdrop-filter:blur(10px)}
+  .btn:hover{background:rgba(255,79,216,.12);border-color:rgba(255,79,216,.55);color:#fff}
+  .btn.act{background:rgba(255,79,216,.18);border-color:rgba(255,79,216,.7);color:#fff;
+    box-shadow:inset 0 0 18px rgba(255,79,216,.18)}
+  .hint{position:absolute;left:22px;bottom:22px;font-size:9.5px;letter-spacing:.13em;
+    color:var(--dim);line-height:1.9}
+  .hint b{color:#a7c8e2;font-weight:600}
+
+  .tag{position:absolute;transform:translate(-50%,-100%);padding:4px 9px;font-size:10px;
+    letter-spacing:.16em;white-space:nowrap;background:rgba(6,11,18,.8);border:1px solid currentColor;
+    opacity:0;transition:opacity .2s;pointer-events:none}
+  .tag.on{opacity:1}
+  .tag u{text-decoration:none;color:#fff;margin-left:8px}
+
+  #load{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:var(--bg);transition:opacity .6s}
+  #load.off{opacity:0;pointer-events:none}
+  #load div{font-size:11px;letter-spacing:.4em;color:var(--dim);text-align:center}
+  #load .ln{width:180px;height:1px;margin:14px auto 0;
+    background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:sweep 1.1s ease-in-out infinite}
+  @keyframes sweep{0%,100%{opacity:.2;transform:scaleX(.3)}50%{opacity:1;transform:scaleX(1)}}
+
+  #fail{position:fixed;inset:0;z-index:50;display:none;place-items:center;background:var(--bg);
+    text-align:center;font-size:12px;line-height:2;color:#ff8f8f;padding:30px}
+  @media (max-width:900px){
+    #panel{width:270px;top:auto;bottom:78px;right:12px;max-height:52%}
+    .hint{display:none}
+  }
+</style>
+</head>
+<body>
+
+<div id="fail"><div>WebGL недоступен в этом браузере.<br>Включи аппаратное ускорение и перезагрузи страницу.</div></div>
+<div id="load"><div>ИНИЦИАЛИЗАЦИЯ МАССИВА II<div class="ln"></div></div></div>
+
+<div class="vig"></div>
+
+<div id="hud">
+  <header>
+    <h1>Nexus Defense</h1>
+    <div class="sub">Массив башен II · 15 прототипов · техно-футуризм</div>
+    <div class="bar"></div>
+  </header>
+
+  <aside id="panel">
+    <div class="p-top">
+      <div class="p-idx">— // —</div>
+      <div class="p-name">—</div>
+      <div class="p-ru">—</div>
+      <div class="p-role">—</div>
+    </div>
+    <div class="p-body">
+      <div class="p-desc"></div>
+      <div class="stats"></div>
+      <div class="p-note"></div>
+    </div>
+  </aside>
+
+  <div class="hint">
+    <b>ЛКМ</b> — выбрать башню &nbsp;·&nbsp; <b>1…0</b> — быстрый выбор<br>
+    <b>← →</b> — навигация &nbsp;·&nbsp; <b>пробел</b> — залп &nbsp;·&nbsp; <b>esc</b> — общий план
+  </div>
+
+  <div id="dock"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ===================== утилиты ===================== */
+const rnd = (a, b) => a + Math.random() * (b - a);
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const hex = n => '#' + n.toString(16).padStart(6, '0');
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+
+/* палитра второй волны: холодный металл с горячими вставками */
+const ACCS = [
+  0x7ce0ff, 0xff5a9c, 0xb388ff, 0x4dffc3, 0xffc14d,
+  0x5affd0, 0xff7a3c, 0x6ba8ff, 0xe0ff5a, 0xff4d4d,
+  0x9d7cff, 0x3cffe0, 0xffb03c, 0x7cff6b, 0xff5ad0
+];
+
+/* мягкая круглая точка — без неё Points рисует серые квадраты */
+const dotTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(.35, 'rgba(255,255,255,.75)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const dotMat = (color, size, opacity) => new THREE.PointsMaterial({
+  color, size, map: dotTex, transparent: true, opacity,
+  blending: THREE.AdditiveBlending, depthWrite: false
+});
+
+/* радиальный спад для дисков: равномерная заливка RingGeometry
+   читается как плоская пластина, спад даёт свет у горизонта */
+const discTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(.16, 'rgba(255,255,255,.95)');
+  g.addColorStop(.42, 'rgba(255,255,255,.42)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+
+/* тёмные базовые цвета при высоком metalness дают чёрные силуэты —
+   поднимаем albedo к читаемой стали, сохраняя оттенок */
+const metal = (color = 0x2b333f, m = 0.68, r = 0.42) => {
+  const c = new THREE.Color(color).lerp(new THREE.Color(0x9aa6b4), .36);
+  return new THREE.MeshStandardMaterial({ color: c, metalness: Math.min(m, .58), roughness: r });
+};
+
+const neon = (color, i = 2.6) => new THREE.MeshStandardMaterial({
+  color: 0x080c12, emissive: new THREE.Color(color), emissiveIntensity: i * .42,
+  metalness: 0.25, roughness: 0.45
+});
+
+/* Кристалл. Материалы с transmission не получают обычного диффузного
+   отклика, поэтому при key+hemi ~2.6 светлый Standard-корпус гарантированно
+   выбивается в белый. Лечится тёмной базой (гасит диффуз) плюс emissive
+   (даёт цвет и свечение) — фасеты остаются читаемыми. */
+const glassMat = color => {
+  const c = new THREE.Color(color);
+  return new THREE.MeshStandardMaterial({
+    color: c.clone().multiplyScalar(.3), metalness: 0, roughness: .3,
+    emissive: c, emissiveIntensity: .5
+  });
+};
+
+/* оболочка-кромка. Непрозрачный emissive на 1.02× от геометрии
+   складывается в сплошной белый конус и съедает саму деталь —
+   поэтому кромка аддитивная и не пишет глубину */
+const glowMat = (color, opacity = .5) => new THREE.MeshBasicMaterial({
+  color, transparent: true, opacity, blending: THREE.AdditiveBlending,
+  depthWrite: false, side: THREE.DoubleSide
+});
+
+const addShadow = root => root.traverse(o => {
+  if (o.isMesh && !o.userData.noShadow) { o.castShadow = true; o.receiveShadow = true; }
+});
+
+function idPlate(text, color) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const x = c.getContext('2d');
+  x.font = 'bold 82px ui-monospace, Consolas, monospace';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillStyle = hex(color); x.globalAlpha = .9;
+  x.fillText(text, 128, 66);
+  x.globalCompositeOperation = 'destination-out'; x.globalAlpha = 1;
+  for (let y = 0; y < 128; y += 3) { x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, y, 256, 1.5); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.5, .75), new THREE.MeshBasicMaterial({
+    map: t, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  m.rotation.x = -Math.PI / 2; m.userData.noShadow = true; m.renderOrder = 3;
+  return m;
+}
+
+/* базовая платформа. Во второй волне детали выше и тоньше, чем в первой,
+   поэтому плита меньше: на радиусе 2.15 она задавливала силуэт и башня
+   читалась как подставка, а не как сооружение. */
+function hexBase(accent, index) {
+  const g = new THREE.Group();
+  const body = metal(0x222a35, .9, .42);
+  const dark = metal(0x141a22, .85, .55);
+  const R = 1.72, R2 = 1.94;
+
+  const plate = new THREE.Mesh(new THREE.CylinderGeometry(R, R2, 0.28, 6), body);
+  plate.position.y = .14; g.add(plate);
+
+  const inset = new THREE.Mesh(new THREE.CylinderGeometry(1.42, 1.49, 0.09, 6), dark);
+  inset.position.y = .32; g.add(inset);
+
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(R + .01, 0.04, 6, 6), neon(accent, 3.4));
+  rim.rotation.x = Math.PI / 2; rim.rotation.z = Math.PI / 6; rim.position.y = .29; g.add(rim);
+
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(1.42, 6), new THREE.MeshBasicMaterial({
+    color: accent, transparent: true, opacity: .1, blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  glow.rotation.x = -Math.PI / 2; glow.position.y = .33; glow.userData.noShadow = true; g.add(glow);
+
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * Math.PI * 2 + Math.PI / 6;
+    const p = new THREE.Mesh(new THREE.BoxGeometry(.22, .25, .22), body);
+    p.position.set(Math.cos(a) * R * .9, .34, Math.sin(a) * R * .9);
+    p.rotation.y = -a; g.add(p);
+    const led = new THREE.Mesh(new THREE.BoxGeometry(.17, .03, .05), neon(accent, 2.2));
+    led.position.set(Math.cos(a) * (R * .9 + .09), .45, Math.sin(a) * (R * .9 + .09));
+    led.rotation.y = -a; led.userData.noShadow = true; g.add(led);
+  }
+  const pl = idPlate(index, accent);
+  pl.position.set(0, .335, .92);
+  g.add(pl);
+  return g;
+}
+
+/* ободок-кольцо с рёбрами — переиспользуется половиной башен */
+function ringCage(parent, r, y, color, ribs, thick = .05) {
+  const g = new THREE.Group();
+  g.position.y = y;
+  const torus = new THREE.Mesh(new THREE.TorusGeometry(r, thick, 6, 24), metal(0x39434f, .8, .38));
+  torus.rotation.x = Math.PI / 2; g.add(torus);
+  const light = new THREE.Mesh(new THREE.TorusGeometry(r, thick * .5, 6, 24), neon(color, 3));
+  light.rotation.x = Math.PI / 2; light.userData.noShadow = true; g.add(light);
+  for (let i = 0; i < ribs; i++) {
+    const a = i / ribs * Math.PI * 2;
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(thick * 1.6, thick * 5, thick * 1.6), metal(0x4a5563, .8, .35));
+    rib.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+    g.add(rib);
+  }
+  parent.add(g);
+  return g;
+}
+
+/* ===================== рендерер и сцена ===================== */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (e) {
+  document.getElementById('fail').style.display = 'grid';
+  document.getElementById('load').classList.add('off');
+  throw e;
+}
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04060b);
+scene.fog = new THREE.FogExp2(0x04060b, 0.019);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 400);
+camera.position.set(0, 30, 40);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.075;
+controls.minDistance = 4;
+controls.maxDistance = 110;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.target.set(0, 3, 0);
+controls.autoRotateSpeed = 0.4;
+
+/* процедурное окружение для отражений — тёмное, с цветными панелями */
+function buildEnvironment() {
+  const s = new THREE.Scene();
+  s.add(new THREE.Mesh(
+    new THREE.SphereGeometry(12, 24, 16),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      vertexShader: 'varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+      fragmentShader: `varying vec3 vP; void main(){
+        float h = normalize(vP).y*.5+.5;
+        gl_FragColor = vec4(mix(vec3(0.035,0.045,0.07), vec3(0.15,0.10,0.24), pow(h,1.4)),1.);
+      }`
+    })
+  ));
+  const panel = (col, pos, w, h) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: col }));
+    m.position.set(...pos); m.lookAt(0, 0, 0); s.add(m);
+  };
+  panel(0x8a2f6a, [-8, 5, 0], 8, 5);
+  panel(0x2f5f8a, [8, 4, 0], 8, 5);
+  panel(0x6a2f8a, [0, 9, 0], 9, 9);
+  panel(0x2a6a5a, [0, -6, 6], 12, 6);
+  const pm = new THREE.PMREMGenerator(renderer);
+  const rt = pm.fromScene(s, 0.03);
+  pm.dispose();
+  return rt.texture;
+}
+scene.environment = buildEnvironment();
+
+scene.add(new THREE.HemisphereLight(0x8fb0e0, 0x201430, 0.92));
+const key = new THREE.DirectionalLight(0xd8e0ff, 1.7);
+key.position.set(16, 28, 14);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 4; key.shadow.camera.far = 100;
+key.shadow.camera.left = -34; key.shadow.camera.right = 34;
+key.shadow.camera.top = 30; key.shadow.camera.bottom = -26;
+key.shadow.bias = -0.0007;
+key.shadow.normalBias = 0.35;
+scene.add(key);
+const fillA = new THREE.PointLight(0xff4fd8, 34, 70, 2); fillA.position.set(-20, 7, 14); scene.add(fillA);
+const fillB = new THREE.PointLight(0x4fd8ff, 26, 70, 2); fillB.position.set(20, 8, -12); scene.add(fillB);
+
+/* пол + техносетка */
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(260, 260), metal(0x070a10, 0.72, 0.4));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true;
+scene.add(floor);
+
+function gridPlane(size, cell, color, opacity) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: {
+      uColor: { value: new THREE.Color(color) },
+      uCell: { value: cell }, uFade: { value: 52 }, uOp: { value: opacity }
+    },
+    vertexShader: `varying vec3 vW; void main(){ vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz;
+      gl_Position=projectionMatrix*viewMatrix*w; }`,
+    fragmentShader: `varying vec3 vW; uniform vec3 uColor; uniform float uCell; uniform float uFade; uniform float uOp;
+      void main(){
+        vec2 p = vW.xz/uCell;
+        vec2 g = abs(fract(p-.5)-.5)/max(fwidth(p),vec2(1e-4));
+        float l = 1.-min(min(g.x,g.y),1.);
+        float d = 1.-smoothstep(0.,uFade,length(vW.xz));
+        float a = l*d*uOp;
+        if(a<0.002) discard;
+        gl_FragColor = vec4(uColor, a);
+      }`
+  }));
+  m.rotation.x = -Math.PI / 2; m.position.y = .012; m.renderOrder = 1; m.userData.noShadow = true;
+  return m;
+}
+/* сетка приглушена: насыщенная маджента забивает корпуса башен,
+   и силуэты тонут. Роль сетки — подложка, а не фон */
+scene.add(gridPlane(140, 1, 0x6b3a7a, .12), gridPlane(140, 5, 0xa857c0, .26));
+
+/* пыль в воздухе */
+const dustN = 900, dustPos = new Float32Array(dustN * 3);
+for (let i = 0; i < dustN; i++) {
+  dustPos[i * 3] = rnd(-52, 52); dustPos[i * 3 + 1] = rnd(.2, 18); dustPos[i * 3 + 2] = rnd(-38, 38);
+}
+const dustGeo = new THREE.BufferGeometry();
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+const dust = new THREE.Points(dustGeo, dotMat(0xc08ae0, .3, .5));
+scene.add(dust);
+
+/* ===================== эффекты ===================== */
+const liveFx = [];
+
+function beam(color, rCore = .05, rHalo = .16) {
+  const g = new THREE.Group();
+  const mk = (r, op) => {
+    const geo = new THREE.CylinderGeometry(r, r, 1, 8, 1, true);
+    geo.translate(0, .5, 0);
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: op, blending: THREE.AdditiveBlending,
+      depthWrite: false, side: THREE.DoubleSide
+    }));
+    m.userData.noShadow = true; m.renderOrder = 4;
+    return m;
+  };
+  const core = mk(rCore, 1), halo = mk(rHalo, .34);
+  g.add(core, halo);
+  g.userData = { core, halo };
+  g.visible = false;
+  scene.add(g);
+  return g;
+}
+function alignBeam(b, from, to) {
+  b.position.copy(from);
+  const d = new THREE.Vector3().subVectors(to, from);
+  const len = d.length();
+  b.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize());
+  b.scale.set(1, len, 1);
+}
+function fireBeam(b, from, to, dur = .18, grow = 5) {
+  alignBeam(b, from, to);
+  b.visible = true;
+  liveFx.push({
+    t: 0, dur, grow, step(p) {
+      const w = p < .12 ? p / .12 : 1 - (p - .12) / .88 * .55;
+      b.userData.core.material.opacity = w;
+      b.userData.halo.material.opacity = w * .34;
+      b.scale.x = b.scale.z = (p < .1 ? p / .1 : 1) * grow;
+      b.userData.halo.material.opacity = w * .34 / ((p < .1 ? p / .1 : 1) * grow);
+    },
+    done() { b.visible = false; b.scale.set(1, b.scale.y, 1); }
+  });
+}
+function burst(color, from, n = 26, spread = 1.6) {
+  const pos = new Float32Array(n * 3), vel = [];
+  for (let i = 0; i < n; i++) {
+    pos.set([from.x, from.y, from.z], i * 3);
+    vel.push(V(rnd(-1, 1), rnd(-.2, 1.4), rnd(-1, 1)).normalize().multiplyScalar(rnd(.8, 3) * spread));
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(geo, dotMat(color, .18, 1));
+  pts.userData.noShadow = true;
+  scene.add(pts);
+  liveFx.push({
+    t: 0, dur: 1.15, step(p) {
+      const a = geo.attributes.position.array;
+      vel.forEach((v, i) => {
+        v.y -= 3.2 * .016;
+        a[i * 3] += v.x * .02; a[i * 3 + 1] += v.y * .02; a[i * 3 + 2] += v.z * .02;
+      });
+      geo.attributes.position.needsUpdate = true;
+      pts.material.opacity = 1 - p;
+    },
+    done() { scene.remove(pts); geo.dispose(); pts.material.dispose(); }
+  });
+}
+
+/* ===================== модели ===================== */
+const BUILDERS = [
+
+  /* 01 · КРИО-РЕШЁТКА — кристаллическая структура, морозит сектор */
+  () => {
+    const A = ACCS[0], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '01'));
+    const dark = metal(0x1a2c3a, .9, .34), hull = metal(0x2b4256, .82, .38);
+    const ice = glassMat(0x4ea8dd);
+
+    /* основание-кристалл: три сходящихся лепестка */
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const bl = new THREE.Mesh(new THREE.ConeGeometry(.34, 1.5, 4), hull);
+      bl.position.set(Math.cos(a) * .5, 1.15, Math.sin(a) * .5);
+      bl.rotation.set(.34, -a, 0);
+      root.add(bl);
+    }
+    /* центральный октаэдр — сердце решётки */
+    const coreG = new THREE.Group(); coreG.position.y = 2.1; root.add(coreG);
+    const oct = new THREE.Mesh(new THREE.OctahedronGeometry(.78, 0), ice);
+    oct.castShadow = true; coreG.add(oct);
+    const cage = new THREE.Mesh(new THREE.OctahedronGeometry(.95, 0), neon(A, 2.2));
+    oct.geometry.computeVertexNormals();
+    cage.material.wireframe = true; cage.userData.noShadow = true; coreG.add(cage);
+    bob.push({ o: coreG, amp: .1, s: 1.1, ph: 0 });
+    spin.push({ o: cage, ax: 'y', s: .5 });
+    spin.push({ o: cage, ax: 'x', s: .3 });
+
+    /* радиальные ледяные клинья */
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      const sp = new THREE.Group(); sp.position.y = 1.1; sp.rotation.y = -a; root.add(sp);
+      const shard = new THREE.Mesh(new THREE.ConeGeometry(.19, 1.9, 3), ice);
+      shard.position.set(1.15, .5, 0); shard.rotation.z = .5;
+      shard.castShadow = true; sp.add(shard);
+      const edge = new THREE.Mesh(new THREE.ConeGeometry(.1, 1.95, 3), glowMat(A, .5));
+      edge.position.copy(shard.position); edge.rotation.copy(shard.rotation);
+      edge.scale.setScalar(1.02); edge.userData.noShadow = true; sp.add(edge);
+      pulse.push(edge);
+    }
+    const ring = ringCage(root, 1.5, 2.15, A, 6, .05);
+    spin.push({ o: ring, ax: 'y', s: -.7 });
+
+    /* лампа ниже ядра: внутри гладкого октаэдра при decay 2
+       освещение ближней грани уходит в клиппинг независимо от интенсивности */
+    const light = new THREE.PointLight(A, 9, 12, 2); light.position.y = .95; root.add(light);
+    pulse.push(light);
+
+    const N = 70, pn = new Float32Array(N * 3), ns = [];
+    for (let i = 0; i < N; i++) ns.push({ a: rnd(0, 6.28), r: rnd(1.4, 2.6), y: rnd(.6, 2.4), sp: rnd(.4, 1.2), ph: rnd(0, 6.28) });
+    const ng = new THREE.BufferGeometry();
+    ng.setAttribute('position', new THREE.BufferAttribute(pn, 3));
+    const flakes = new THREE.Points(ng, dotMat(0xdff2ff, .13, .85));
+    flakes.userData.noShadow = true; root.add(flakes);
+
+    return {
+      root, h: 3.2, spin, bob, pulse,
+      extra: [() => {
+        const a = ng.attributes.position.array;
+        ns.forEach((s, i) => {
+          s.a += s.sp * .008; s.ph += .03;
+          a[i * 3] = Math.cos(s.a) * s.r;
+          a[i * 3 + 1] = s.y + Math.sin(s.ph) * .3;
+          a[i * 3 + 2] = Math.sin(s.a) * s.r;
+        });
+        ng.attributes.position.needsUpdate = true;
+      }],
+      fire() {
+        for (let k = 0; k < 3; k++) {
+          const geo = new THREE.RingGeometry(1.0, 1.1, 40);
+          const ring2 = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+            color: A, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false
+          }));
+          ring2.rotation.x = -Math.PI / 2; ring2.position.y = .2;
+          ring2.userData.noShadow = true; root.add(ring2);
+          liveFx.push({
+            t: 0, dur: 1.2, delay: k * .2, step(p) {
+              const q = p - this.delay;
+              if (q < 0) { ring2.material.opacity = 0; return; }
+              ring2.scale.setScalar(1 + q * 6);
+              ring2.material.opacity = (1 - q) * .5;
+            },
+            done() { root.remove(ring2); geo.dispose(); ring2.material.dispose(); }
+          });
+        }
+        burst(A, V(0, 2.1, 0), 30, 1.2);
+      }
+    };
+  },
+
+  /* 02 · СПИРАЛЬНОЕ КОПЬЁ — двойная спираль, пробивает колонну врагов */
+  () => {
+    const A = ACCS[1], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '02'));
+    const hull = metal(0x50304a, .85, .35), dark = metal(0x2a1826, .9, .45);
+
+    /* две винтовые ленты, сходящиеся к острию */
+    const coilG = new THREE.Group(); coilG.position.y = .5; root.add(coilG);
+    for (let s = 0; s < 2; s++) {
+      const pts = [];
+      for (let i = 0; i <= 64; i++) {
+        const t = i / 64;
+        const a = t * Math.PI * 4 + s * Math.PI;
+        const r = .62 * (1 - t * .78);
+        pts.push(V(Math.cos(a) * r, t * 3.0, Math.sin(a) * r));
+      }
+      const curve = new THREE.CatmullRomCurve3(pts);
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 72, .075, 6, false), hull);
+      tube.castShadow = true; coilG.add(tube);
+      const glow = new THREE.Mesh(new THREE.TubeGeometry(curve, 72, .032, 6, false), neon(A, 3));
+      glow.userData.noShadow = true; coilG.add(glow);
+      pulse.push(glow);
+    }
+    spin.push({ o: coilG, ax: 'y', s: 1.1 });
+
+    /* три стабилизатора у основания спирали */
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(.14, 1.0, .42), dark);
+      fin.position.set(Math.cos(a) * .7, .95, Math.sin(a) * .7);
+      fin.rotation.y = -a; root.add(fin);
+    }
+    /* остриё */
+    const tip = new THREE.Group(); tip.position.y = 3.55; root.add(tip);
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(.16, 1.15, 6), metal(0xd8e4ee, .95, .12));
+    spike.castShadow = true; tip.add(spike);
+    const halo = new THREE.Mesh(new THREE.ConeGeometry(.3, .5, 6), neon(A, 3.4));
+    halo.position.y = -.3; halo.userData.noShadow = true; tip.add(halo);
+    pulse.push(halo);
+    bob.push({ o: tip, amp: .06, s: 2.2, ph: 0 });
+
+    const collar = ringCage(root, .78, 1.2, A, 4, .045);
+    spin.push({ o: collar, ax: 'y', s: -1.8 });
+
+    const light = new THREE.PointLight(A, 10, 10, 2); light.position.y = 3.3; root.add(light);
+    pulse.push(light);
+    const b1 = beam(A, .04, .13), b2 = beam(A, .04, .13);
+
+    return {
+      root, h: 4.2, spin, bob, pulse,
+      fire() {
+        const from = V(0, 4.0, 0);
+        fireBeam(b1, from, from.clone().add(V(1.2, -.5, 5.5)), .22, 6);
+        setTimeout(() => fireBeam(b2, from, from.clone().add(V(-1.2, -.5, 5.5)), .22, 6), 70);
+        burst(A, from, 22, 1.4);
+      }
+    };
+  },
+
+  /* 03 · ПУСТОТНЫЙ СИФОН — тёмная воронка, вытягивает энергию */
+  () => {
+    const A = ACCS[2], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '03'));
+    const dark = metal(0x1c1630, .92, .4), hull = metal(0x342a52, .85, .32);
+
+    /* три опоры, наклонённые внутрь — воронка */
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const cx = Math.cos(a), sz = Math.sin(a);
+      const strut = new THREE.Mesh(new THREE.CylinderGeometry(.1, .16, 2.5, 6), hull);
+      strut.position.set(cx * .95, 1.5, sz * .95);
+      strut.rotation.set(cx * .22, 0, -sz * .22);
+      strut.castShadow = true; root.add(strut);
+      /* сердцевина опоры и два ребра жёсткости — голый цилиндр не читается */
+      const spine = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, 2.3, 5), neon(A, 2.2));
+      spine.position.set(cx * .92, 1.5, sz * .92);
+      spine.rotation.copy(strut.rotation);
+      spine.userData.noShadow = true; root.add(spine);
+      for (const k of [.75, 1.5, 2.25]) {
+        const collar = new THREE.Mesh(new THREE.CylinderGeometry(.17, .17, .07, 6), dark);
+        collar.position.set(cx * (.95 - (k - 1.5) * .04), k, sz * (.95 - (k - 1.5) * .04));
+        collar.rotation.copy(strut.rotation);
+        root.add(collar);
+      }
+      /* клешня должна стоять вертикально и обнимать сферу,
+         плашмя она читается как тарелка */
+      const claw = new THREE.Mesh(new THREE.TorusGeometry(.3, .055, 5, 10, Math.PI * 1.25), hull);
+      claw.position.set(cx * .74, 2.72, sz * .74);
+      claw.rotation.set(.35, -a + Math.PI / 2, 0);
+      claw.castShadow = true; root.add(claw);
+      const tip2 = new THREE.Mesh(new THREE.SphereGeometry(.075, 8, 6), neon(A, 3));
+      tip2.position.set(cx * .62, 2.95, sz * .62);
+      tip2.userData.noShadow = true; root.add(tip2);
+      pulse.push(tip2);
+    }
+    /* чёрная сингулярность: сфера + два наклонённых диска со спадом
+       и фотонное кольцо у горизонта. Плоский диск без градиента
+       читается как заглушка, а не как аккреция */
+    const coreG = new THREE.Group(); coreG.position.y = 2.9; root.add(coreG);
+    const void_ = new THREE.Mesh(new THREE.SphereGeometry(.5, 20, 14),
+      new THREE.MeshBasicMaterial({ color: 0x05030a }));
+    void_.userData.noShadow = true; coreG.add(void_);
+
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(.56, 20, 14), new THREE.MeshBasicMaterial({
+      color: A, transparent: true, opacity: .22, blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    halo.userData.noShadow = true; coreG.add(halo);
+
+    const disc = new THREE.Mesh(new THREE.RingGeometry(.5, 1.5, 48, 1), new THREE.MeshBasicMaterial({
+      color: A, map: discTex, transparent: true, opacity: .9, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    disc.rotation.set(-Math.PI / 2 + .42, 0, 0); disc.userData.noShadow = true; coreG.add(disc);
+    spin.push({ o: disc, ax: 'z', s: 2.2 });
+    const disc2 = disc.clone(); disc2.material = disc.material.clone();
+    disc2.material.opacity = .5; disc2.rotation.set(-Math.PI / 2 - .3, 0, .7);
+    disc2.scale.setScalar(.82); coreG.add(disc2);
+    spin.push({ o: disc2, ax: 'y', s: -1.6 });
+
+    const photon = new THREE.Mesh(new THREE.TorusGeometry(.53, .022, 6, 44), neon(A, 3.6));
+    photon.rotation.x = Math.PI / 2 + .42; photon.userData.noShadow = true; coreG.add(photon);
+    spin.push({ o: photon, ax: 'z', s: 2.2 });
+
+    const light = new THREE.PointLight(A, 14, 14, 2); light.position.y = 2.9; root.add(light);
+    pulse.push(light);
+
+    /* частицы, втягиваемые в ядро — спираль с ускорением */
+    const N = 110, pn = new Float32Array(N * 3), ns = [];
+    for (let i = 0; i < N; i++) ns.push({ a: rnd(0, 6.28), r: rnd(2.6, .8), y: rnd(-1.6, 1.6), sp: rnd(1.4, 3.4), ph: rnd(0, 6.28) });
+    const ng = new THREE.BufferGeometry();
+    ng.setAttribute('position', new THREE.BufferAttribute(pn, 3));
+    const inFlow = new THREE.Points(ng, dotMat(0xc0a0ff, .16, .9));
+    inFlow.position.y = 2.9; inFlow.userData.noShadow = true; root.add(inFlow);
+
+    return {
+      root, h: 3.4, spin, bob, pulse,
+      extra: [() => {
+        const a = ng.attributes.position.array;
+        ns.forEach((s, i) => {
+          s.r -= s.sp * .006; if (s.r < .5) s.r = 2.7;
+          s.a += s.sp * .028;
+          a[i * 3] = Math.cos(s.a) * s.r;
+          a[i * 3 + 1] = s.y * (s.r / 2.7) + Math.sin(s.ph) * .18;
+          a[i * 3 + 2] = Math.sin(s.a) * s.r;
+        });
+        ng.attributes.position.needsUpdate = true;
+      }],
+      fire() {
+        disc.material.opacity = .95;
+        liveFx.push({ t: 0, dur: .5, step() {}, done() { disc.material.opacity = .5; } });
+        burst(0xd0b0ff, V(0, 2.9, 0), 34, 2.2);
+      }
+    };
+  },
+
+  /* 04 · СПЕКТРАЛЬНАЯ ПРИЗМА — раскладывает луч на веер */
+  () => {
+    const A = ACCS[3], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '04'));
+    const hull = metal(0x2c4a44, .85, .3), dark = metal(0x16302c, .9, .4);
+
+    /* тренога с шарниром */
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2 + .5;
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(.08, .1, 1.5, 6), hull);
+      leg.position.set(Math.cos(a) * .72, 1.1, Math.sin(a) * .72);
+      leg.rotation.set(Math.cos(a) * .3, 0, -Math.sin(a) * .3);
+      leg.castShadow = true; root.add(leg);
+    }
+    /* гимбал — призма вращается внутри */
+    const gimbal = new THREE.Group(); gimbal.position.y = 2.15; root.add(gimbal);
+    const outer = new THREE.Mesh(new THREE.TorusGeometry(.95, .06, 6, 28), hull);
+    outer.rotation.x = Math.PI / 2; outer.castShadow = true; gimbal.add(outer);
+    const inner = new THREE.Mesh(new THREE.TorusGeometry(.78, .05, 6, 28), neon(A, 2.8));
+    inner.rotation.y = Math.PI / 2; inner.userData.noShadow = true; gimbal.add(inner);
+    spin.push({ o: outer, ax: 'y', s: .6 });
+    spin.push({ o: inner, ax: 'x', s: -.9 });
+
+    /* сама призма: треугольный цилиндр со спектральными полосами */
+    const prism = new THREE.Group(); prism.position.y = 2.15; root.add(prism);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(.52, .52, .8, 3), glassMat(0xccf0ff));
+    body.castShadow = true; prism.add(body);
+    const frame = new THREE.Mesh(new THREE.CylinderGeometry(.6, .6, .1, 3), hull);
+    frame.rotation.x = Math.PI / 2; prism.add(frame);
+    const frame2 = frame.clone(); frame2.position.y = .4; prism.add(frame2);
+    const frame3 = frame.clone(); frame3.position.y = -.4; prism.add(frame3);
+    const SP = [0xff4d6a, 0xffb34d, 0x8cff5a, 0x4dd2ff, 0xb44dff];
+    SP.forEach((c, i) => {
+      const band = new THREE.Mesh(new THREE.TorusGeometry(.535, .022, 4, 3), neon(c, 3.2));
+      band.rotation.x = Math.PI / 2; band.position.y = -.32 + i * .16;
+      band.userData.noShadow = true; prism.add(band);
+      pulse.push(band);
+    });
+    spin.push({ o: prism, ax: 'y', s: 1.6 });
+    bob.push({ o: prism, amp: .08, s: 1.3, ph: 1 });
+
+    const light = new THREE.PointLight(A, 9, 11, 2); light.position.y = 2.15; root.add(light);
+    pulse.push(light);
+    const beams = SP.map(c => beam(c, .028, .09));
+
+    return {
+      root, h: 3.0, spin, bob, pulse,
+      fire() {
+        const from = V(0, 2.15, 0);
+        beams.forEach((b, i) => {
+          const a = -.62 + i * .31;
+          fireBeam(b, from, from.clone().add(V(Math.sin(a) * 7, .2, Math.cos(a) * 7)), .26, 5);
+        });
+        burst(A, from, 20, 1.1);
+      }
+    };
+  },
+
+  /* 05 · РЕЛЬСОТРОН — катушка заряжается, гарпун насквозь */
+  () => {
+    const A = ACCS[4], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '05'));
+    const hull = metal(0x504a32, .86, .34), dark = metal(0x2a2618, .9, .45);
+    const railMat = metal(0xe0d4a0, .95, .1);
+
+    /* корпус-монолит с вырезом под рельсы */
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.1, 1.1), hull);
+    body.position.y = .95; body.castShadow = true; root.add(body);
+    const vent = new THREE.Mesh(new THREE.BoxGeometry(.6, .5, 1.16), dark);
+    vent.position.set(0, 1.05, 0); root.add(vent);
+
+    /* две направляющие: заряд бежит по ним */
+    const rails = [];
+    for (let s = -1; s <= 1; s += 2) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(.1, .1, 3.4), railMat);
+      rail.position.set(s * .26, 1.08, .9); rail.castShadow = true; root.add(rail);
+      rails.push(rail);
+      for (let i = 0; i < 5; i++) {
+        const ins = new THREE.Mesh(new THREE.CylinderGeometry(.09, .11, .18, 6), dark);
+        ins.position.set(s * .26, 1.08, -.1 + i * .55);
+        root.add(ins);
+      }
+    }
+    /* катушка: кольца с зарядом */
+    const coilG = new THREE.Group(); coilG.position.set(0, 1.08, -.5); root.add(coilG);
+    const coil = [];
+    for (let i = 0; i < 4; i++) {
+      const c = new THREE.Mesh(new THREE.TorusGeometry(.3 - i * .04, .05, 6, 16), neon(A, 1.2));
+      c.rotation.x = Math.PI / 2; c.position.z = -i * .28;
+      c.userData.noShadow = true; coilG.add(c);
+      coil.push(c); pulse.push(c);
+    }
+    /* дуговитные электроды у дула */
+    for (let s = -1; s <= 1; s += 2) {
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(.14, .022, 4, 8, Math.PI), railMat);
+      arc.position.set(s * .26, 1.08, 2.55); arc.rotation.z = Math.PI;
+      arc.userData.noShadow = true; root.add(arc);
+    }
+    const light = new THREE.PointLight(A, 8, 9, 2); light.position.set(0, 1.1, -.5); root.add(light);
+    pulse.push(light);
+    const b1 = beam(A, .05, .18);
+
+    let charge = 0;
+    return {
+      root, h: 2.2, spin, bob, pulse,
+      tick(dt) {
+        charge = (charge + dt * .8) % 1;
+        coil.forEach((c, i) => {
+          const lit = ((charge * 4) % 4) <= i;
+          c.material.emissiveIntensity = lit ? 2.4 : .25;
+        });
+      },
+      fire() {
+        const from = V(0, 1.08, 2.6);
+        fireBeam(b1, from, from.clone().add(V(0, .1, 11)), .3, 7);
+        burst(A, from, 26, 1.5);
+        coil.forEach(c => { c.material.emissiveIntensity = 2.6; });
+      }
+    };
+  },
+
+  /* 06 · МАТКА РОЯ — улей и дроны, сами дроны бьют */
+  () => {
+    const A = ACCS[5], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '06'));
+    const hull = metal(0x2f4a3e, .86, .38), dark = metal(0x16261f, .9, .45);
+
+    /* улей: три яруса сот с окнами */
+    const hive = new THREE.Group(); hive.position.y = .5; root.add(hive);
+    for (let lvl = 0; lvl < 3; lvl++) {
+      const y = lvl * .78;
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.05 - lvl * .16, 1.18 - lvl * .16, .62, 8), hull);
+      ring.position.y = y + .31; ring.castShadow = true; hive.add(ring);
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(1.07 - lvl * .16, .045, 5, 8), neon(A, 2.4));
+      lip.rotation.x = Math.PI / 2; lip.position.y = y + .62; lip.userData.noShadow = true;
+      hive.add(lip); pulse.push(lip);
+      for (let i = 0; i < 8; i++) {
+        const a = i / 8 * Math.PI * 2;
+        const cell = new THREE.Mesh(new THREE.CylinderGeometry(.12, .12, .08, 6),
+          ((i + lvl) % 2) ? neon(A, 1.6) : dark);
+        cell.position.set(Math.cos(a) * (1.08 - lvl * .16), y + .3, Math.sin(a) * (1.08 - lvl * .16));
+        cell.rotation.x = Math.PI / 2;
+        cell.userData.noShadow = true;
+        hive.add(cell);
+      }
+    }
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(.5, .9, 8), dark);
+    crown.position.y = 3.05; crown.castShadow = true; hive.add(crown);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(.24, 14, 10), neon(A, 3));
+    eye.position.y = 3.35; eye.userData.noShadow = true; hive.add(eye);
+    pulse.push(eye);
+    bob.push({ o: hive, amp: .05, s: 1.6, ph: 0 });
+    const ring = ringCage(root, 1.4, 2.1, A, 3, .05);
+    spin.push({ o: ring, ax: 'y', s: 1.0 });
+
+    /* дроны: точка-ядро + вытянутый корпус */
+    const N = 8, drones = [];
+    const dgrp = new THREE.Group(); dgrp.position.y = 1.9; root.add(dgrp);
+    const dshell = metal(0x3a5a4c, .8, .3);
+    for (let i = 0; i < N; i++) {
+      const d = new THREE.Group();
+      const core = new THREE.Mesh(new THREE.OctahedronGeometry(.13, 0), neon(A, 3.2));
+      core.userData.noShadow = true; d.add(core);
+      const shell = new THREE.Mesh(new THREE.BoxGeometry(.34, .07, .1), dshell);
+      d.add(shell);
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(.05, .05, .16), neon(A, 1.6));
+      tail.position.z = -.2; tail.userData.noShadow = true; d.add(tail);
+      const a = i / N * Math.PI * 2;
+      d.position.set(Math.cos(a) * 2.3, 0, Math.sin(a) * 2.3);
+      dgrp.add(d);
+      drones.push({ o: d, a, r: 2.3, sp: rnd(.7, 1.5), y: rnd(-.5, .8) });
+    }
+    const light = new THREE.PointLight(A, 10, 12, 2); light.position.y = 2.2; root.add(light);
+    pulse.push(light);
+
+    return {
+      root, h: 3.6, spin, bob, pulse,
+      extra: [t => {
+        drones.forEach((d, i) => {
+          d.a += d.sp * .012;
+          d.o.position.set(Math.cos(d.a) * d.r, d.y + Math.sin(t * 1.8 + i) * .25, Math.sin(d.a) * d.r);
+          d.o.rotation.y = -d.a + Math.PI / 2;
+          d.o.rotation.z = Math.sin(t * 2.2 + i) * .3;
+        });
+      }],
+      fire() {
+        drones.forEach((d, i) => {
+          setTimeout(() => burst(A, V(d.o.position.x, 1.9 + d.o.position.y, d.o.position.z), 8, .7), i * 45);
+        });
+      }
+    };
+  },
+
+  /* 07 · ИОННАЯ РЕШЁТКА — клетка, в которой бьётся плазма */
+  () => {
+    const A = ACCS[6], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '07'));
+    const hull = metal(0x5a3220, .86, .36), dark = metal(0x2e1a10, .9, .45);
+
+    /* каркас-клетка: шесть стоек и обручи */
+    const cage = new THREE.Group(); cage.position.y = 1.0; root.add(cage);
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.1, .13, 2.3, 6), hull);
+      post.position.set(Math.cos(a) * 1.05, 1.15, Math.sin(a) * 1.05);
+      post.rotation.set(Math.cos(a) * .2, 0, -Math.sin(a) * .2);
+      post.castShadow = true; cage.add(post);
+    }
+    for (let i = 0; i < 3; i++) {
+      const hoop = new THREE.Mesh(new THREE.TorusGeometry(1.06, .055, 6, 24), hull);
+      hoop.rotation.x = Math.PI / 2; hoop.position.y = .3 + i * .85;
+      hoop.castShadow = true; cage.add(hoop);
+      const led = new THREE.Mesh(new THREE.TorusGeometry(1.06, .024, 4, 24), neon(A, 2.8));
+      led.rotation.x = Math.PI / 2; led.position.y = .3 + i * .85;
+      led.userData.noShadow = true; cage.add(led);
+      pulse.push(led);
+    }
+    /* ядро дышит */
+    const coreG = new THREE.Group(); coreG.position.y = 1.0; cage.add(coreG);
+    const plasma = new THREE.Mesh(new THREE.IcosahedronGeometry(.52, 1), neon(A, 3.4));
+    plasma.userData.noShadow = true; coreG.add(plasma);
+    spin.push({ o: plasma, ax: 'y', s: 1.3 });
+    spin.push({ o: plasma, ax: 'x', s: -.7 });
+    bob.push({ o: coreG, amp: .12, s: 2.4, ph: 0 });
+
+    const light = new THREE.PointLight(A, 15, 15, 2); light.position.y = 2.0; root.add(light);
+    pulse.push(light);
+    const arcs = [beam(A, .03, .1), beam(A, .03, .1), beam(A, .03, .1)];
+
+    return {
+      root, h: 3.2, spin, bob, pulse,
+      extra: [t => {
+        const s = 1 + Math.sin(t * 3.4) * .1;
+        plasma.scale.setScalar(s);
+      }],
+      fire() {
+        const from = V(0, 2.0, 0);
+        for (let i = 0; i < 3; i++) {
+          setTimeout(() => {
+            const a = rnd(0, 6.28), e = rnd(.2, .9);
+            fireBeam(arcs[i], from, from.clone().add(V(
+              Math.cos(a) * 6, e * 2, Math.sin(a) * 6)), .18, 5);
+          }, i * 60);
+        }
+        burst(A, from, 24, 1.6);
+      }
+    };
+  },
+
+  /* 08 · ПИРОКЛАПАНЫ — веер сопел, обжигает всё в секторе */
+  () => {
+    const A = ACCS[7], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '08'));
+    const hull = metal(0x5a3a28, .86, .4), dark = metal(0x2a1a12, .92, .5);
+    /* metal() уводит любой цвет к стали, поэтому раскалённый раструб
+       идёт отдельным emissive-материалом, иначе сопла читаются серыми */
+    const hotMat = new THREE.MeshStandardMaterial({
+      color: 0x3a2018, roughness: .55, metalness: .5, side: THREE.DoubleSide,
+      emissive: 0xff6a1e, emissiveIntensity: .4
+    });
+
+    /* манифольст: сопла разной длины, как у реактивного двигателя */
+    const heights = [1.0, 1.35, 1.15, 1.55, 1.25];
+    heights.forEach((hh, i) => {
+      const a = -.9 + i * .45;
+      const g = new THREE.Group(); g.rotation.y = -a; g.position.y = .5; root.add(g);
+      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(.16, .2, hh, 8), hull);
+      pipe.position.set(0, hh / 2, .95); pipe.castShadow = true; g.add(pipe);
+      const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(.24, .14, .3, 8, 1, true), hotMat);
+      nozzle.position.set(0, hh, 1.05); g.add(nozzle);
+      const throat = new THREE.Mesh(new THREE.CylinderGeometry(.1, .1, .1, 8), neon(0xff7a2a, 3.2));
+      throat.position.set(0, hh, 1.05); throat.userData.noShadow = true; g.add(throat);
+      pulse.push(throat);
+      for (let k = 0; k < 3; k++) {
+        const band = new THREE.Mesh(new THREE.TorusGeometry(.21, .03, 4, 8), dark);
+        band.rotation.x = Math.PI / 2; band.position.set(0, .25 + k * .3, .95);
+        g.add(band);
+      }
+    });
+    /* топливный бак под соплами */
+    const tank = new THREE.Mesh(new THREE.SphereGeometry(.62, 16, 12), dark);
+    tank.position.y = .55; tank.scale.y = .8; tank.castShadow = true; root.add(tank);
+    const pump = new THREE.Mesh(new THREE.TorusGeometry(.66, .05, 6, 20), neon(A, 2.2));
+    pump.rotation.x = Math.PI / 2; pump.position.y = .9; root.add(pump);
+    spin.push({ o: pump, ax: 'y', s: 1.4 });
+    bob.push({ o: pump, amp: .04, s: 3, ph: 0 });
+
+    const light = new THREE.PointLight(A, 14, 12, 2); light.position.set(0, 1.6, .7); root.add(light);
+    pulse.push(light);
+
+    /* искры из сопел */
+    const N = 60, pn = new Float32Array(N * 3), ns = [];
+    for (let i = 0; i < N; i++) ns.push({ a: rnd(-1, 1), sp: rnd(1.6, 4.2), y: rnd(.6, 1.7), ph: rnd(0, 6.28) });
+    const ng = new THREE.BufferGeometry();
+    ng.setAttribute('position', new THREE.BufferAttribute(pn, 3));
+    const sparks = new THREE.Points(ng, dotMat(0xffb060, .12, .9));
+    sparks.userData.noShadow = true; root.add(sparks);
+
+    return {
+      root, h: 2.4, spin, bob, pulse,
+      extra: [t => {
+        const a = ng.attributes.position.array;
+        ns.forEach((s, i) => {
+          s.ph += .1;
+          const p = (t * s.sp + s.ph) % 1;
+          a[i * 3] = s.a * (1.2 + p * 2.4);
+          a[i * 3 + 1] = s.y + p * 1.1;
+          a[i * 3 + 2] = 1.1 + p * 2.6;
+        });
+        ng.attributes.position.needsUpdate = true;
+      }],
+      fire() {
+        for (let k = 0; k < 5; k++) {
+          const a = -.9 + k * .45;
+          const g = new THREE.Group(); g.rotation.y = -a; root.add(g);
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(.9, 5.5, 10, 1, true), new THREE.MeshBasicMaterial({
+            color: A, transparent: true, opacity: .5, side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending, depthWrite: false
+          }));
+          cone.rotation.x = Math.PI / 2; cone.position.set(0, 1.3, 3.8);
+          cone.userData.noShadow = true; g.add(cone);
+          liveFx.push({
+            t: 0, dur: .55, delay: k * .05, step(p) {
+              const q = p - this.delay;
+              cone.material.opacity = q < 0 ? 0 : Math.sin(q * Math.PI) * .55;
+            },
+            done() { root.remove(g); cone.geometry.dispose(); cone.material.dispose(); }
+          });
+        }
+        burst(0xffc060, V(0, 1.4, 1.2), 28, 1.3);
+      }
+    };
+  },
+
+  /* 09 · ФАЗОВЫЙ ШПИЛЬ — сегменты расходятся и сходятся */
+  () => {
+    const A = ACCS[8], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '09'));
+    const hull = metal(0x2a3a58, .86, .32), dark = metal(0x141c2c, .9, .42);
+
+    /* восемь сегментов, каждый на своём подвесе */
+    const segs = [];
+    for (let i = 0; i < 8; i++) {
+      const y = .75 + i * .42;
+      const s = 1 - i * .075;
+      const g = new THREE.Group(); g.position.y = y; root.add(g);
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(.42 * s, .5 * s, .34, 6), hull);
+      body.castShadow = true; g.add(body);
+      const gap = new THREE.Mesh(new THREE.TorusGeometry(.46 * s, .03, 4, 6), neon(A, 3));
+      gap.rotation.x = Math.PI / 2; gap.position.y = -.19; gap.userData.noShadow = true;
+      g.add(gap); pulse.push(gap);
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(.06, .3, .18), dark);
+      fin.position.set(.5 * s, 0, 0); g.add(fin);
+      segs.push({ o: g, y, s });
+    }
+    /* аппекс с фазовым ядром */
+    const apex = new THREE.Group(); apex.position.y = 4.35; root.add(apex);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(.3, .8, 6), metal(0xdde8f4, .95, .1));
+    cap.castShadow = true; apex.add(cap);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(.19, 14, 10), neon(A, 3.6));
+    core.position.y = .18; core.userData.noShadow = true; apex.add(core);
+    pulse.push(core);
+    bob.push({ o: apex, amp: .09, s: 1.8, ph: 0 });
+
+    /* три стабилизатора */
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const st = new THREE.Mesh(new THREE.BoxGeometry(.1, 1.5, .26), hull);
+      st.position.set(Math.cos(a) * .8, .95, Math.sin(a) * .8);
+      st.rotation.y = -a; st.castShadow = true; root.add(st);
+    }
+    const light = new THREE.PointLight(A, 12, 13, 2); light.position.y = 4.3; root.add(light);
+    pulse.push(light);
+
+    return {
+      root, h: 4.8, spin, bob, pulse,
+      extra: [t => {
+        /* сегменты «дышат» по фазе — расходятся и сходятся */
+        segs.forEach((s, i) => {
+          const off = Math.sin(t * 1.6 - i * .5) * .14;
+          s.o.position.y = s.y + off;
+          s.o.scale.setScalar(1 + off * .6);
+        });
+      }],
+      fire() {
+        for (let k = 0; k < 4; k++) {
+          const seg = segs[k];
+          const geo = new THREE.SphereGeometry(.3, 12, 8);
+          const orb = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+            color: A, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false
+          }));
+          orb.position.y = seg.o.position.y;
+          orb.userData.noShadow = true; root.add(orb);
+          liveFx.push({
+            t: 0, dur: .7, delay: k * .09, step(p) {
+              const q = p - this.delay;
+              if (q < 0) { orb.material.opacity = 0; return; }
+              orb.position.y = seg.o.position.y + q * 4.4;
+              orb.scale.setScalar(1 - q * .6);
+              orb.material.opacity = (1 - q) * .9;
+            },
+            done() { root.remove(orb); geo.dispose(); orb.material.dispose(); }
+          });
+        }
+        burst(A, V(0, 4.5, 0), 20, 1.2);
+      }
+    };
+  },
+
+  /* 10 · ЗЕРКАЛЬНЫЙ МАССИВ — луч рикошетит между панелями */
+  () => {
+    const A = ACCS[9], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '10'));
+    const hull = metal(0x5a2a2a, .86, .3), dark = metal(0x2a1414, .9, .45);
+    const mirror = new THREE.MeshStandardMaterial({
+      color: 0xdce8f4, metalness: 1, roughness: .04
+    });
+
+    /* излучатель в центре */
+    const emit = new THREE.Group(); emit.position.y = 1.9; root.add(emit);
+    const bulb = new THREE.Mesh(new THREE.IcosahedronGeometry(.26, 1), neon(A, 3.6));
+    bulb.userData.noShadow = true; emit.add(bulb);
+    pulse.push(bulb);
+    const housing = new THREE.Mesh(new THREE.CylinderGeometry(.38, .48, .6, 8), hull);
+    housing.position.y = -.4; housing.castShadow = true; emit.add(housing);
+
+    /* три зеркала на шарнирах вокруг излучателя */
+    const panes = [];
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const arm = new THREE.Group(); arm.rotation.y = -a; arm.position.y = .6; root.add(arm);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.07, .09, 1.1, 6), dark);
+      pole.position.set(1.35, .55, 0); pole.castShadow = true; arm.add(pole);
+      const hinge = new THREE.Mesh(new THREE.SphereGeometry(.13, 10, 8), hull);
+      hinge.position.set(1.35, 1.1, 0); arm.add(hinge);
+      const p = new THREE.Mesh(new THREE.BoxGeometry(.08, 1.05, .78), mirror);
+      p.position.set(1.35, 1.62, 0); p.rotation.y = -.7; p.castShadow = true; arm.add(p);
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(.1, 1.1, .05), neon(A, 2.4));
+      edge.position.set(1.35, 1.62, .4); edge.rotation.y = -.7;
+      edge.userData.noShadow = true; arm.add(edge);
+      pulse.push(edge);
+      panes.push({ o: arm, a });
+    }
+    const light = new THREE.PointLight(A, 13, 14, 2); light.position.y = 2.1; root.add(light);
+    pulse.push(light);
+    const chain = [beam(A, .03, .1), beam(A, .03, .1), beam(A, .03, .1), beam(A, .03, .1)];
+
+    return {
+      root, h: 2.8, spin, bob, pulse,
+      extra: [t => {
+        /* зеркала доворачиваются, ища цель */
+        panes.forEach((p, i) => {
+          p.o.rotation.y = -p.a + Math.sin(t * .7 + i) * .5;
+        });
+      }],
+      fire() {
+        /* луч: из излучателя в зеркало, потом в цель */
+        const src = V(0, 1.9, 0);
+        let at = src;
+        for (let k = 0; k < 4; k++) {
+          const nxt = at.clone().add(V(rnd(-2, 2), rnd(-.3, 1.2), rnd(1.5, 5)));
+          fireBeam(chain[k], at, nxt, .2, 5);
+          at = nxt;
+        }
+        burst(A, src, 22, 1.2);
+      }
+    };
+  },
+
+  /* 11 · ГРАВИТАЦИОННАЯ СКВАЖИНА — тяжёлая воронка тянет цель */
+  () => {
+    const A = ACCS[10], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '11'));
+    const hull = metal(0x3a2a52, .86, .34), dark = metal(0x1a1428, .92, .4);
+
+    /* барабан-подножие: без вертикали диск читается как подставка */
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(1.02, 1.24, 1.15, 12), hull);
+    drum.position.y = .6; drum.castShadow = true; root.add(drum);
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * Math.PI * 2;
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(.1, 1, .3), dark);
+      fin.position.set(Math.cos(a) * 1.1, .6, Math.sin(a) * 1.1);
+      fin.rotation.y = -a; root.add(fin);
+    }
+
+    /* обод кольцом, а не сплошным диском — иначе воронка с throat
+       не видна ни сверху, ни сбоку */
+    const discG = new THREE.Group(); discG.position.y = 1.28; root.add(discG);
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.34, .34, 12, 1, true), hull);
+    wall.material = metal(0x3a2a52, .86, .34);
+    wall.material.side = THREE.DoubleSide;
+    wall.castShadow = true; discG.add(wall);
+    const top = new THREE.Mesh(new THREE.RingGeometry(1.04, 1.5, 12), metal(0x4a3768, .84, .3));
+    top.rotation.x = -Math.PI / 2; top.position.y = .17;
+    top.receiveShadow = true; discG.add(top);
+    const under = new THREE.Mesh(new THREE.RingGeometry(1.04, 1.34, 12), dark);
+    under.rotation.x = Math.PI / 2; under.position.y = -.17;
+    under.material.side = THREE.DoubleSide;
+    discG.add(under);
+    const lip = new THREE.Mesh(new THREE.TorusGeometry(1.5, .08, 6, 24), neon(A, 2.6));
+    lip.rotation.x = Math.PI / 2; lip.position.y = .17; lip.userData.noShadow = true;
+    discG.add(lip); pulse.push(lip);
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      const clamp = new THREE.Mesh(new THREE.BoxGeometry(.22, .46, .36), dark);
+      clamp.position.set(Math.cos(a) * 1.34, .06, Math.sin(a) * 1.34);
+      clamp.rotation.y = -a; clamp.castShadow = true; discG.add(clamp);
+      /* радиальная лопасть на ободе — задаёт ритм силуэту */
+      const vane = new THREE.Mesh(new THREE.BoxGeometry(.14, .34, .5), hull);
+      vane.position.set(Math.cos(a) * 1.5, .3, Math.sin(a) * 1.5);
+      vane.rotation.y = -a; vane.castShadow = true; discG.add(vane);
+    }
+    const funnel = new THREE.Mesh(new THREE.ConeGeometry(1.06, 1.1, 20, 1, true),
+      new THREE.MeshStandardMaterial({ color: 0x1b1430, roughness: .45, metalness: .75, side: THREE.BackSide }));
+    funnel.position.y = -.42; funnel.userData.noShadow = true; discG.add(funnel);
+    const throat = new THREE.Mesh(new THREE.CircleGeometry(.3, 20),
+      new THREE.MeshBasicMaterial({ color: A }));
+    throat.rotation.x = -Math.PI / 2; throat.position.y = -.92;
+    throat.userData.noShadow = true; discG.add(throat);
+    pulse.push(throat);
+
+    /* три арки над ободом и стягиваемая масса в горле */
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2 + .5;
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(.42, .06, 5, 12, Math.PI), hull);
+      arch.position.set(Math.cos(a) * 1.12, 1.55, Math.sin(a) * 1.12);
+      arch.rotation.set(0, -a, 0);
+      arch.castShadow = true; root.add(arch);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(.07, .09, 1.1, 6), dark);
+      post.position.set(Math.cos(a) * 1.5, 1.83, Math.sin(a) * 1.5);
+      post.castShadow = true; root.add(post);
+    }
+    const mass = new THREE.Mesh(new THREE.IcosahedronGeometry(.3, 0), glassMat(A));
+    mass.position.y = 2.1; root.add(mass);
+    spin.push({ o: mass, ax: 'y', s: 1.4 });
+    spin.push({ o: mass, ax: 'x', s: .9 });
+    const column = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, 1.4, 8), glowMat(A, .3));
+    column.position.y = 1.5; column.userData.noShadow = true; root.add(column);
+
+    /* спиральные кольца, сжимающиеся к центру */
+    const rings = [];
+    for (let i = 0; i < 3; i++) {
+      const r = new THREE.Mesh(new THREE.TorusGeometry(1.5 + i * .45, .04, 5, 24), neon(A, 1.8 - i * .4));
+      r.rotation.x = Math.PI / 2; r.position.y = 1.4 + i * .18;
+      r.userData.noShadow = true; root.add(r);
+      rings.push({ o: r, base: 1.5 + i * .45, ph: i * 2.1 });
+      pulse.push(r);
+    }
+    const light = new THREE.PointLight(A, 14, 16, 2); light.position.y = 1.1; root.add(light);
+    pulse.push(light);
+
+    return {
+      root, h: 2.9, spin, bob, pulse,
+      extra: [t => {
+        rings.forEach((r, i) => {
+          const k = 1 - ((t * .35 + i * .33) % 1) * .75;
+          r.o.scale.set(k, k, 1);
+          r.o.position.y = 1.4 + i * .18 - (1 - k) * .5;
+        });
+        mass.position.y = 2.1 - Math.abs(Math.sin(t * .8)) * .34;
+      }],
+      fire() {
+        for (let k = 0; k < 3; k++) {
+          const geo = new THREE.RingGeometry(1.6, 1.72, 44);
+          const rr = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+            color: A, transparent: true, opacity: 1, side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending, depthWrite: false
+          }));
+          rr.rotation.x = -Math.PI / 2; rr.position.y = .2;
+          rr.userData.noShadow = true; root.add(rr);
+          liveFx.push({
+            t: 0, dur: 1, delay: k * .16, step(p) {
+              const q = p - this.delay;
+              if (q < 0) { rr.material.opacity = 0; return; }
+              rr.scale.setScalar(Math.max(.01, 1 - q * .9));
+              rr.material.opacity = (1 - q) * .6;
+            },
+            done() { root.remove(rr); geo.dispose(); rr.material.dispose(); }
+          });
+        }
+        burst(A, V(0, .3, 0), 30, 2.4);
+      }
+    };
+  },
+
+  /* 12 · НЕОНОВЫЙ БАРЬЕР — плоский щит, держит направление */
+  () => {
+    const A = ACCS[11], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '12'));
+    const hull = metal(0x2a4a4a, .86, .34), dark = metal(0x14262a, .9, .42);
+
+    /* эмиттер: два блока и рама щита */
+    for (let s = -1; s <= 1; s += 2) {
+      const block = new THREE.Mesh(new THREE.BoxGeometry(.5, 1.2, .6), hull);
+      block.position.set(s * 1.15, 1.0, 0); block.castShadow = true; root.add(block);
+      const vent = new THREE.Mesh(new THREE.BoxGeometry(.1, .8, .3), neon(A, 2.6));
+      vent.position.set(s * .9, 1.0, 0); vent.userData.noShadow = true; root.add(vent);
+      pulse.push(vent);
+      for (let i = 0; i < 3; i++) {
+        const fin = new THREE.Mesh(new THREE.BoxGeometry(.5, .05, .18), dark);
+        fin.position.set(s * 1.15, .6 + i * .4, .34); root.add(fin);
+      }
+    }
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(2.4, .18, .4), hull);
+    bridge.position.y = 1.68; bridge.castShadow = true; root.add(bridge);
+
+    /* сам щит: изогнутая сетка с бегущей волной */
+    /* радиус 3.2 вдвое больше базы — в общем плане щит висит
+       отдельной плитой, прижимаем дугу к сооружению */
+    const shieldGeo = new THREE.CylinderGeometry(2.15, 2.15, 1.9, 28, 6, true, -.62, 1.24);
+    const shield = new THREE.Mesh(shieldGeo, new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uTime: { value: 0 }, uCol: { value: new THREE.Color(A) } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv=uv;
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+      fragmentShader: `precision highp float; varying vec2 vUv;
+        uniform float uTime; uniform vec3 uCol;
+        void main(){
+          float edge = smoothstep(0.,.14,vUv.y)*smoothstep(1.,.86,vUv.y);
+          float side = smoothstep(0.,.08,vUv.x)*smoothstep(1.,.92,vUv.x);
+          float scan = .55+.45*sin(vUv.y*22. - uTime*3.2);
+          float sweep = .5+.5*sin(vUv.x*6. - uTime*2.1);
+          float a = edge*side*(scan*.34+.3)*(.55+.45*sweep);
+          if(a<0.004) discard;
+          gl_FragColor=vec4(uCol,a*.34);
+        }`
+    }));
+    shield.rotation.y = Math.PI;
+    shield.position.y = 1.05;
+    shield.userData.noShadow = true;
+    shield.renderOrder = 4;
+    root.add(shield);
+
+    /* каркас дуги: без него заливка читается как отдельная плита */
+    for (const sy of [-.95, .95]) {
+      const frame = new THREE.Mesh(new THREE.TorusGeometry(2.15, .035, 6, 22, 1.24), neon(A, 3));
+      frame.rotation.y = -.62; frame.position.y = 1.05 + sy;
+      frame.userData.noShadow = true; root.add(frame);
+      pulse.push(frame);
+    }
+
+    const light = new THREE.PointLight(A, 12, 12, 2); light.position.set(0, 1.2, 1.4); root.add(light);
+    pulse.push(light);
+    const b = beam(A, .05, .16);
+
+    return {
+      root, h: 2.2, spin, bob, pulse,
+      tick(dt, t) { shield.material.uniforms.uTime.value = t; },
+      fire() {
+        const from = V(0, 1.2, 1.3);
+        fireBeam(b, from, from.clone().add(V(0, .2, 5.2)), .34, 4);
+        shield.material.uniforms.uCol.value.setHex(0xffffff);
+        liveFx.push({
+          t: 0, dur: .5, step(p) {
+            shield.material.uniforms.uCol.value.setHex(A).lerp(new THREE.Color(0xffffff), 1 - p);
+          }, done() { shield.material.uniforms.uCol.value.setHex(A); }
+        });
+        burst(A, from, 18, 1);
+      }
+    };
+  },
+
+  /* 13 · АНТИМАТТЕР — два ствола навстречу, нестабильное ядро */
+  () => {
+    const A = ACCS[12], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '13'));
+    const hull = metal(0x4a4a2a, .86, .32), dark = metal(0x24241a, .9, .42);
+    const barrel = metal(0x6b6450, .95, .22);
+
+    /* реактор-основание */
+    const reactor = new THREE.Group(); reactor.position.y = .5; root.add(reactor);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(.8, .95, 1.0, 8), hull);
+    body.castShadow = true; reactor.add(body);
+    const shell = new THREE.Mesh(new THREE.CylinderGeometry(.86, .86, .12, 8), dark);
+    shell.position.y = .55; reactor.add(shell);
+    for (let i = 0; i < 4; i++) {
+      const a = i / 4 * Math.PI * 2 + .4;
+      const clamp = new THREE.Mesh(new THREE.BoxGeometry(.16, .8, .3), dark);
+      clamp.position.set(Math.cos(a) * .9, .2, Math.sin(a) * .9);
+      clamp.rotation.y = -a; reactor.add(clamp);
+    }
+
+    /* два ствола, сходящиеся к ядру */
+    const barrels = [];
+    for (let s = -1; s <= 1; s += 2) {
+      const arm = new THREE.Group(); arm.position.y = 1.1; root.add(arm);
+      const b1 = new THREE.Mesh(new THREE.CylinderGeometry(.17, .2, 2.0, 8), barrel);
+      b1.position.set(s * .75, 1.0, .35); b1.rotation.z = s * .55;
+      b1.castShadow = true; arm.add(b1);
+      const b2 = new THREE.Mesh(new THREE.CylinderGeometry(.13, .16, 1.4, 8), barrel);
+      b2.position.set(s * .35, 1.5, .75); b2.rotation.z = s * .95;
+      b2.castShadow = true; arm.add(b2);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(.22, .04, 5, 12), neon(A, 2.4));
+      ring.position.set(s * .55, 1.25, .55); ring.rotation.y = Math.PI / 2;
+      ring.userData.noShadow = true; arm.add(ring);
+      pulse.push(ring);
+      barrels.push(arm);
+    }
+    /* ядро: нестабильная сфера между стволами */
+    const coreG = new THREE.Group(); coreG.position.y = 1.95; root.add(coreG);
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(.34, 1), neon(A, 3.8));
+    core.userData.noShadow = true; coreG.add(core);
+    pulse.push(core);
+    const cage2 = new THREE.Mesh(new THREE.IcosahedronGeometry(.5, 0),
+      new THREE.MeshBasicMaterial({ color: A, wireframe: true, transparent: true, opacity: .5 }));
+    cage2.userData.noShadow = true; coreG.add(cage2);
+    spin.push({ o: cage2, ax: 'y', s: 2.4 });
+    spin.push({ o: cage2, ax: 'x', s: 1.3 });
+    bob.push({ o: coreG, amp: .1, s: 5.2, ph: 0 });
+
+    const light = new THREE.PointLight(A, 14, 14, 2); light.position.y = 1.95; root.add(light);
+    pulse.push(light);
+    const b1 = beam(A, .05, .17), b2 = beam(A, .05, .17);
+
+    return {
+      root, h: 2.8, spin, bob, pulse,
+      extra: [t => {
+        const k = 1 + Math.sin(t * 6.2) * .12;
+        core.scale.setScalar(k);
+        coreG.rotation.z = Math.sin(t * 1.4) * .3;
+      }],
+      fire() {
+        const from = V(0, 1.95, .5);
+        fireBeam(b1, from, from.clone().add(V(.9, .6, 6.5)), .26, 7);
+        setTimeout(() => fireBeam(b2, from, from.clone().add(V(-.9, .6, 6.5)), .26, 7), 55);
+        burst(A, from, 32, 1.9);
+      }
+    };
+  },
+
+  /* 14 · ГИДРО-ПЕТЛЯ — замкнутая петля с водяной струёй */
+  () => {
+    const A = ACCS[13], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '14'));
+    const hull = metal(0x2c4a30, .86, .36), dark = metal(0x16261a, .9, .45);
+
+    /* колонна с соплом */
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(.34, .46, 1.9, 8), hull);
+    mast.position.y = 1.35; mast.castShadow = true; root.add(mast);
+    const collar = new THREE.Mesh(new THREE.TorusGeometry(.38, .05, 5, 16), neon(A, 2.4));
+    collar.rotation.x = Math.PI / 2; collar.position.y = 1.9; root.add(collar);
+    pulse.push(collar);
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(.2, .1, .5, 8), metal(0xc8d8c0, .9, .15));
+    nozzle.position.set(0, 2.5, .2); nozzle.rotation.x = Math.PI / 2.6;
+    nozzle.castShadow = true; root.add(nozzle);
+
+    /* петля: тор с бегущей водой по шейдеру. Почти горизонтальный
+       тор от низкой камеры читается как блюдце, поэтому петля стоит
+       вертикально и нанизана на колонну */
+    const loop = new THREE.Mesh(new THREE.TorusGeometry(1.15, .17, 10, 36), new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uCol: { value: new THREE.Color(A) } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv=uv;
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+      fragmentShader: `precision highp float; varying vec2 vUv;
+        uniform float uTime; uniform vec3 uCol;
+        void main(){
+          float flow = fract(vUv.x*6. - uTime*.7);
+          float w = smoothstep(.0,.12,flow)*smoothstep(.42,.12,flow);
+          vec3 c = mix(vec3(.02,.09,.11), uCol, .22 + w*.5);
+          c += uCol * w * .55;
+          gl_FragColor=vec4(c,1.);
+        }`
+    }));
+    loop.position.y = 1.55; loop.rotation.y = Math.PI / 2;
+    loop.castShadow = true; root.add(loop);
+    /* опорные кронштейны петли */
+    for (let s = -1; s <= 1; s += 2) {
+      const br = new THREE.Mesh(new THREE.BoxGeometry(.5, .12, .12), dark);
+      br.position.set(0, 1.55, s * 1.05); root.add(br);
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(.16, .34, .3), hull);
+      pad.position.set(0, 1.55, s * 1.18); root.add(pad);
+    }
+    bob.push({ o: loop, amp: .07, s: 1.4, ph: 0 });
+
+    /* капли */
+    const N = 40, pn = new Float32Array(N * 3), ns = [];
+    for (let i = 0; i < N; i++) ns.push({ t: rnd(0, 1), sp: rnd(.5, 1.1), a: rnd(-.4, .4) });
+    const ng = new THREE.BufferGeometry();
+    ng.setAttribute('position', new THREE.BufferAttribute(pn, 3));
+    const drops = new THREE.Points(ng, dotMat(0x9fffd0, .14, .9));
+    drops.userData.noShadow = true; root.add(drops);
+
+    const light = new THREE.PointLight(A, 11, 12, 2); light.position.set(0, 1.6, 0); root.add(light);
+    pulse.push(light);
+    const b = beam(0x7fffd0, .05, .18);
+
+    return {
+      root, h: 2.9, spin, bob, pulse,
+      tick(dt, t) { loop.material.uniforms.uTime.value = t; },
+      extra: [t => {
+        const a = ng.attributes.position.array;
+        ns.forEach((s, i) => {
+          s.t += s.sp * .012;
+          if (s.t > 1) s.t -= 1;
+          a[i * 3] = s.a * s.t * 2.4;
+          a[i * 3 + 1] = 2.4 - s.t * s.t * 1.5;
+          a[i * 3 + 2] = .5 + s.t * 3.4;
+        });
+        ng.attributes.position.needsUpdate = true;
+      }],
+      fire() {
+        const from = V(0, 2.35, .6);
+        fireBeam(b, from, from.clone().add(V(0, -.5, 4.6)), .4, 4);
+        burst(0x7fffd0, from, 24, 1.1);
+      }
+    };
+  },
+
+  /* 15 · РЕЛЕЙНАЯ МАЧТА — чистая поддержка, усиливает соседей */
+  () => {
+    const A = ACCS[14], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '15'));
+    const hull = metal(0x503050, .86, .34), dark = metal(0x241628, .9, .42);
+
+    /* ферма: четыре пояса и раскосы */
+    const mast = new THREE.Group(); mast.position.y = .5; root.add(mast);
+    for (let lvl = 0; lvl < 5; lvl++) {
+      const y = lvl * .62;
+      const r = .62 - lvl * .07;
+      for (let i = 0; i < 4; i++) {
+        const a = i / 4 * Math.PI * 2;
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(.055, .07, .66, 5), hull);
+        leg.position.set(Math.cos(a) * r, y + .33, Math.sin(a) * r);
+        leg.rotation.set(Math.cos(a + .7) * .12, 0, -Math.sin(a + .7) * .12);
+        leg.castShadow = true; mast.add(leg);
+      }
+      const hoop = new THREE.Mesh(new THREE.TorusGeometry(r, .03, 4, 4), dark);
+      hoop.rotation.x = Math.PI / 2; hoop.rotation.z = Math.PI / 4; hoop.position.y = y + .66;
+      mast.add(hoop);
+      const led = new THREE.Mesh(new THREE.BoxGeometry(.09, .04, .09), neon(A, 2 + lvl * .3));
+      led.position.set(r * .7, y + .66, r * .7); led.userData.noShadow = true;
+      mast.add(led); pulse.push(led);
+    }
+    /* диск антенны */
+    const dish = new THREE.Mesh(new THREE.SphereGeometry(.62, 20, 12, 0, Math.PI * 2, 0, Math.PI * .42),
+      new THREE.MeshStandardMaterial({ color: 0xd8c8e8, metalness: .9, roughness: .12, side: THREE.DoubleSide }));
+    dish.position.y = 3.6; dish.rotation.x = Math.PI; dish.castShadow = true; mast.add(dish);
+    const feed = new THREE.Mesh(new THREE.CylinderGeometry(.03, .03, .5, 5), dark);
+    feed.position.y = 3.35; mast.add(feed);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(.1, 10, 8), neon(A, 3.6));
+    tip.position.y = 3.12; tip.userData.noShadow = true; mast.add(tip);
+    pulse.push(tip);
+    spin.push({ o: dish, ax: 'y', s: .35 });
+    bob.push({ o: dish, amp: .05, s: 1.1, ph: 0 });
+
+    /* боковые рупоры */
+    for (let s = -1; s <= 1; s += 2) {
+      const horn = new THREE.Mesh(new THREE.CylinderGeometry(.16, .07, .45, 8, 1, true), dark);
+      horn.position.set(s * .72, 2.5, 0); horn.rotation.z = s * 1.2;
+      horn.castShadow = true; mast.add(horn);
+      const mouth = new THREE.Mesh(new THREE.CircleGeometry(.16, 10), neon(A, 2));
+      mouth.position.set(s * .88, 2.68, 0); mouth.rotation.set(0, 0, -s * 1.2);
+      mouth.userData.noShadow = true; mast.add(mouth);
+      pulse.push(mouth);
+    }
+
+    const light = new THREE.PointLight(A, 11, 14, 2); light.position.y = 3.2; root.add(light);
+    pulse.push(light);
+
+    /* аура поддержки: три расширяющихся кольца */
+    const aura = [0, 1, 2].map(k => {
+      const geo = new THREE.RingGeometry(2.4, 2.5, 48);
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: A, transparent: true, opacity: .3, side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      }));
+      m.rotation.x = -Math.PI / 2; m.position.y = .12;
+      m.userData.noShadow = true; root.add(m);
+      return m;
+    });
+
+    return {
+      root, h: 4.2, spin, bob, pulse,
+      tick(dt, t) {
+        aura.forEach((m, i) => {
+          const p = ((t * .35 + i * .33) % 1);
+          m.scale.setScalar(.4 + p * 1.4);
+          m.material.opacity = (1 - p) * .3;
+        });
+      },
+      fire() {
+        aura.forEach((m, i) => {
+          setTimeout(() => burst(A, V(rnd(-2, 2), .3, rnd(-2, 2)), 10, .6), i * 70);
+        });
+        burst(A, V(0, 3.2, 0), 18, 1.4);
+      }
+    };
+  }
+];
+
+/* ===================== описания ===================== */
+const META = [
+  { name: 'FROST LATTICE', ru: 'Крио-решётка', role: 'Площадное замедление',
+    desc: 'Кристаллическая решётка держит холод в секторе 110°. Влажность на осколках конденсируется в туман: в конусе всё замедляется сразу, а не по одной цели.',
+    stats: { 'Урон': [.08, '8'], 'Цели': [.52, 'AoE'], 'Скор.': [.5, '1.0/с'], 'Дальн.': [.5, '12'], 'Стоим.': [.42, '110'] },
+    note: 'Замедление до 60%, растёт со временем. Первый ряд: усиливает весь сектор.' },
+  { name: 'HELIX LANCE', ru: 'Спиральное копьё', role: 'Пробитие колонны',
+    desc: 'Две винтовые ленты сводят заряд в остриё. Гарпун насквозь проходит очередь и не теряет броню на всём пути.',
+    stats: { 'Урон': [.72, '180'], 'Цели': [.24, '5 в линию'], 'Скор.': [.2, '0.5/с'], 'Дальн.': [.8, '19'], 'Стоим.': [.8, '240'] },
+    note: 'Чем плотнее колонна, тем выше выгода. По одиночной цели — перестрел.' },
+  { name: 'VOID SIPHON', ru: 'Пустотный сифон', role: 'Вытягивание энергии',
+    desc: 'Сингулярность вытягивает заряд из броненосцев в радиусе. Каждая цель теряет регенерацию щита, пока длится растяжение.',
+    stats: { 'Урон': [.2, '24/с'], 'Цели': [.5, 'поле'], 'Скор.': [.4, '—'], 'Дальн.': [.6, '14'], 'Стоим.': [.68, '205'] },
+    note: 'Снимает щит, а не здоровье. Первый приоритет против бронированных.' },
+  { name: 'SPECTRUM PRISM', ru: 'Спектральная призма', role: 'Веер по сектору',
+    desc: 'Гимбал удерживает призму, пока та раскладывает луч на пять независимых полос. Каждая полоса ищет свою цель.',
+    stats: { 'Урон': [.3, '58/полоса'], 'Цели': [.4, '5 полос'], 'Скор.': [.44, '0.95/с'], 'Дальн.': [.66, '16'], 'Стоим.': [.74, '225'] },
+    note: 'Полосы не пересекаются — не накрывают весь сектор. Работает по потоку.' },
+  { name: 'RAILGUN', ru: 'Рельсотрон', role: 'Сквозной выстрел',
+    desc: 'Четыре конденсаторных кольца заряжаются по очереди, энергия бежит по рельсам и вышибает гарпун на полную дальность.',
+    stats: { 'Урон': [.8, '300'], 'Цели': [.12, '2 в линию'], 'Скор.': [.16, '0.4/с'], 'Дальн.': [1, '24'], 'Стоим.': [.84, '255'] },
+    note: 'Самая большая дальность в наборе. Заряд видно — есть время среагировать.' },
+  { name: 'SWARM QUEEN', ru: 'Матка роя', role: 'Дроны с автопоиском',
+    desc: 'Улей выпускает восемь дронов, каждый ищет цель сам. Пока рой цел, он переживает потери и не разбегается.',
+    stats: { 'Урон': [.22, '18/дрон'], 'Цели': [.3, '8 дронов'], 'Скор.': [.8, '3.2/с'], 'Дальн.': [.5, '13'], 'Стоим.': [.6, '175'] },
+    note: 'Убийство дронов ослабляет рой, но не убивает его сразу. Дешёвый фронт.' },
+  { name: 'ION LATTICE', ru: 'Ионная решётка', role: 'Плазменные разряды',
+    desc: 'Шесть стоек удерживают ионизированную среду. Разряды бьют в случайные точки внутри клетки и перескакивают.',
+    stats: { 'Урон': [.34, '66'], 'Цели': [.44, '4'], 'Скор.': [.62, '1.4/с'], 'Дальн.': [.58, '14'], 'Стоим.': [.62, '185'] },
+    note: 'Разряды бьют хаотично, но по нескольким целям. Непредсказуем в одиночку.' },
+  { name: 'PYRO VENTS', ru: 'Пироклапаны', role: 'Конус огня',
+    desc: 'Манифольст из пяти сопел разной длины гонит раскалённую струю. Обжигает всё, что попало между соплами, включая броню.',
+    stats: { 'Урон': [.5, '58/с'], 'Цели': [.4, 'AoE'], 'Скор.': [.88, '—'], 'Дальн.': [.34, '8'], 'Стоим.': [.52, '155'] },
+    note: 'Самый широкий конус в наборе. Ставится первым рядом, ломает построение.' },
+  { name: 'PHASE SPIRE', ru: 'Фазовый шпиль', role: 'Прыжок по фазе',
+    desc: 'Восемь сегментов расходятся и сходятся в такт фазового сдвига. Заряд перескакивает между ними, не тратя времени на разгон.',
+    stats: { 'Урон': [.4, '80'], 'Цели': [.28, '3'], 'Скор.': [.68, '1.5/с'], 'Дальн.': [.62, '15'], 'Стоим.': [.7, '210'] },
+    note: 'Скорострельность растёт, пока сегменты расходятся. Пик — в фазе.' },
+  { name: 'MIRROR ARRAY', ru: 'Зеркальный массив', role: 'Рикошет',
+    desc: 'Три зеркала доворачиваются, ловя отражение. Луч рикошетит до четырёх раз и только потом гаснет.',
+    stats: { 'Урон': [.3, '40/отскок'], 'Цели': [.5, 'рикошет'], 'Скор.': [.5, '1.1/с'], 'Дальн.': [.56, '13'], 'Стоим.': [.66, '195'] },
+    note: 'Урон падает на 30% с каждым отскоком. Идеально против рассыпных целей.' },
+  { name: 'GRAVITY WELL', ru: 'Гравитационная скважина', role: 'Стягивание',
+    desc: 'Тяжёлый диск с воронкой. Всё, что попало в радиус, стягивается к throat и теряет скорость на 45%.',
+    stats: { 'Урон': [.1, '10'], 'Цели': [.6, 'поле'], 'Скор.': [.3, '0.6/с'], 'Дальн.': [.55, '13'], 'Стоим.': [.64, '190'] },
+    note: 'Создаёт бутылочное горлышко. Внутри работает всё: от Melter до Railgun.' },
+  { name: 'NEON BULWARK', ru: 'Неоновый барьер', role: 'Щит направления',
+    desc: 'Два эмиттера держат изогнутую стену с бегущей волной. Проходящая цель получает задержку — атаки налетают в щит.',
+    stats: { 'Урон': [.05, '5'], 'Цели': [.4, 'щит'], 'Скор.': [.4, '—'], 'Дальн.': [.36, '6'], 'Стоим.': [.44, '125'] },
+    note: 'Не убивает — задерживает на 0.9 с. Ставится перед опасным участком пути.' },
+  { name: 'ANTIMATTER', ru: 'Анти-matter', role: 'Парный выстрел',
+    desc: 'Два ствола сходятся к нестабильному ядру. Два выстрела сходятся в одной точке и дают удвоенный урон при прорыве.',
+    stats: { 'Урон': [.66, '150'], 'Цели': [.2, '2'], 'Скор.': [.3, '0.7/с'], 'Дальн.': [.7, '17'], 'Стоим.': [.78, '235'] },
+    note: 'Сходимость лучей даёт ×2 по цели в стыке. Ловить надо на узких местах.' },
+  { name: 'HYDRO LOOP', ru: 'Гидро-петля', role: 'Струя с охлаждением',
+    desc: 'Замкнутая петля гоняет воду через сопло. Непрерывная струя замедляет цель и наносит урон в темп расхода.',
+    stats: { 'Урон': [.4, '52/с'], 'Цели': [.3, '2'], 'Скор.': [.9, '—'], 'Дальн.': [.3, '7'], 'Стоим.': [.5, '150'] },
+    note: 'Тонкая струя, но урон и замедление одновременно. Ставится на проходных местах.' },
+  { name: 'RELAY MAST', ru: 'Релейная мачта', role: 'Усиление соседей',
+    desc: 'Ферма с антенной ретранслирует данные. Соседние башни в радиусе 9 получают +30% скорострельности. Сама не стреляет.',
+    stats: { 'Урон': [0, '—'], 'Цели': [0, '—'], 'Скор.': [.85, '+30%'], 'Дальн.': [.48, '9'], 'Стоим.': [.58, '170'] },
+    note: 'Аура складывается, но не умножается. Две мачты рядом = ×1.6 ко всей группе.' }
+];
+
+/* ===================== расстановка ===================== */
+const TOWERS = [];
+const SPACING = 9.4, COLS = 5, ROWS = [-7.4, 0, 7.4];
+META.forEach((meta, i) => {
+  const built = BUILDERS[i]();
+  const col = i % COLS, row = Math.floor(i / COLS);
+  built.root.position.set((col - 2) * SPACING, 0, ROWS[row]);
+  built.root.rotation.y = (col - 2) * .05 + row * .1;
+  built.root.userData.towerIndex = i;
+  addShadow(built.root);
+  scene.add(built.root);
+  TOWERS.push({
+    i, meta, ...built,
+    posV: new THREE.Vector3(built.root.position.x, built.h * .5 + .3, built.root.position.z)
+  });
+});
+
+/* подписи */
+const hud = document.getElementById('hud');
+TOWERS.forEach(t => {
+  const el = document.createElement('div');
+  el.className = 'tag';
+  el.style.color = hex(ACCS[t.i]);
+  el.innerHTML = `<span>${String(t.i + 1).padStart(2, '0')} · ${t.meta.name}</span><u>${t.meta.ru}</u>`;
+  hud.appendChild(el);
+  t.tag = el;
+});
+
+/* ===================== постобработка ===================== */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.3, 0.68, 0.75);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ===================== UI ===================== */
+const panel = document.getElementById('panel');
+const dock = document.getElementById('dock');
+const N = TOWERS.length;
+let selected = -1, hovered = -1, userPicked = false;
+['pointerdown', 'keydown', 'wheel'].forEach(ev =>
+  addEventListener(ev, () => userPicked = true, { once: true, passive: true }));
+
+TOWERS.forEach(t => {
+  const b = document.createElement('button');
+  b.className = 'btn';
+  b.textContent = String(t.i + 1).padStart(2, '0') + ' ' + t.meta.name;
+  b.addEventListener('click', () => select(t.i));
+  b.addEventListener('mouseenter', () => hovered = t.i);
+  b.addEventListener('mouseleave', () => hovered = -1);
+  dock.appendChild(b);
+  t.btn = b;
+});
+
+const mkBtn = (label, on, cb) => {
+  const b = document.createElement('button');
+  b.className = 'btn' + (on ? ' act' : '');
+  b.textContent = label;
+  b.addEventListener('click', cb);
+  dock.appendChild(b);
+  return b;
+};
+let autoSpin = true, wire = false;
+const btnAll = mkBtn('Общий план', false, () => overview());
+const btnSpin = mkBtn('Автоповорот', true, () => { autoSpin = !autoSpin; btnSpin.classList.toggle('act', autoSpin); });
+const btnWire = mkBtn('Каркас', false, () => {
+  wire = !wire; btnWire.classList.toggle('act', wire);
+  scene.traverse(o => {
+    if (o.isMesh && o.material && o.material.isMeshStandardMaterial) o.material.wireframe = wire;
+  });
+});
+const btnFire = mkBtn('Залп', false, () => { if (selected >= 0) TOWERS[selected].fire(TOWERS[selected].root); });
+
+/* панель */
+function renderPanel(t) {
+  const m = t.meta, a = hex(ACCS[t.i]);
+  panel.querySelector('.p-idx').textContent = `БАШНЯ ${String(t.i + 1).padStart(2, '0')} / ${N}`;
+  panel.querySelector('.p-name').textContent = m.name;
+  panel.querySelector('.p-ru').textContent = m.ru;
+  const role = panel.querySelector('.p-role');
+  role.textContent = m.role; role.style.color = a;
+  panel.querySelector('.p-desc').textContent = m.desc;
+  const st = panel.querySelector('.stats');
+  st.innerHTML = '';
+  for (const [k, [v, label]] of Object.entries(m.stats)) {
+    const row = document.createElement('div');
+    row.className = 'st';
+    row.innerHTML = `<div class="k">${k}</div><div class="t"><i></i></div><div class="v">${label}</div>`;
+    st.appendChild(row);
+    const bar = row.querySelector('i');
+    requestAnimationFrame(() => { bar.style.background = a; bar.style.width = (v * 100) + '%'; });
+  }
+  const note = panel.querySelector('.p-note');
+  note.textContent = m.note; note.style.color = a;
+  panel.classList.add('on');
+}
+
+/* камера */
+let flight = null;
+function flyTo(pos, target) {
+  flight = { p0: camera.position.clone(), t0: controls.target.clone(), p1: pos, t1: target, k: 0 };
+  controls.enabled = false;
+}
+function select(i) {
+  selected = i;
+  TOWERS.forEach(t => t.btn.classList.toggle('act', t.i === i));
+  const t = TOWERS[i];
+  const dir = V(.62, .42, 1).normalize();
+  flyTo(t.posV.clone().addScaledVector(dir, 6.8 + t.h * 2.0), t.posV.clone());
+  renderPanel(t);
+}
+function overview() {
+  selected = -1;
+  panel.classList.remove('on');
+  TOWERS.forEach(t => t.btn.classList.remove('act'));
+  flyTo(V(0, 23, 35), V(0, 2.4, 0));
+}
+
+/* пикинг */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+let downX = 0, downY = 0;
+function pick(ev) {
+  ptr.x = (ev.clientX / innerWidth) * 2 - 1;
+  ptr.y = -(ev.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(ptr, camera);
+  const hits = ray.intersectObjects(TOWERS.map(t => t.root), true);
+  if (!hits.length) return -1;
+  let o = hits[0].object;
+  while (o && o.userData.towerIndex === undefined) o = o.parent;
+  return o ? o.userData.towerIndex : -1;
+}
+renderer.domElement.addEventListener('pointerdown', e => { downX = e.clientX; downY = e.clientY; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
+  const i = pick(e);
+  if (i >= 0) select(i); else overview();
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (e.buttons) return;
+  hovered = pick(e);
+  renderer.domElement.style.cursor = hovered >= 0 ? 'pointer' : 'default';
+});
+
+addEventListener('keydown', e => {
+  const num = /^[1-9]$/.test(e.key) ? +e.key - 1 : (e.key === '0' ? 9 : -1);
+  if (num >= 0 && num < N) select(num);
+  else if (e.key === 'Escape') overview();
+  else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') select((selected + 1 + N) % N);
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') select((selected + N - 1) % N);
+  else if (e.key === ' ') {
+    e.preventDefault();
+    if (selected >= 0) TOWERS[selected].fire(TOWERS[selected].root);
+  }
+});
+
+/* ===================== цикл ===================== */
+const clock = new THREE.Clock();
+let tAcc = 0;
+
+function frame() {
+  const dt = Math.min(clock.getDelta(), .05);
+  tAcc += dt;
+
+  if (flight) {
+    flight.k = Math.min(1, flight.k + dt * 1.9);
+    const e = ease(flight.k);
+    camera.position.lerpVectors(flight.p0, flight.p1, e);
+    controls.target.lerpVectors(flight.t0, flight.t1, e);
+    if (flight.k >= 1) { flight = null; controls.enabled = true; }
+  }
+  controls.autoRotate = autoSpin && !flight && selected < 0;
+  controls.update();
+
+  TOWERS.forEach(t => {
+    const near = selected < 0 || selected === t.i || hovered === t.i;
+    const s = selected === t.i ? 1 : (near ? 1 : .94);
+    t.root.scale.lerp(V(s, s, s), .12);
+    const mul = selected === t.i ? 2.1 : 1;
+    t.spin.forEach(sp => sp.o.rotation[sp.ax] += sp.s * dt * mul);
+    t.bob.forEach(b => {
+      b.o.userData.baseY ??= b.o.position.y;
+      b.o.position.y = b.o.userData.baseY + Math.sin(tAcc * b.s + b.ph) * b.amp;
+    });
+    t.pulse.forEach((p, k) => {
+      if (p.isLight) {
+        p.userData.base ??= p.intensity;
+        p.intensity = p.userData.base * (.82 + Math.sin(tAcc * 3 + k) * .18);
+      } else if (p.material?.emissive) {
+        p.userData.baseE ??= p.material.emissiveIntensity;
+        p.material.emissiveIntensity = p.userData.baseE * (.75 + Math.sin(tAcc * 3.4 + k * 1.7) * .35);
+      } else if (p.material?.isMeshBasicMaterial) {
+        p.userData.baseO ??= p.material.opacity;
+        p.material.opacity = p.userData.baseO * (.72 + Math.sin(tAcc * 3.4 + k * 1.7) * .38);
+      }
+    });
+    t.extra?.forEach(f => f(tAcc));
+    t.tick?.(dt, tAcc);
+  });
+
+  for (let i = liveFx.length - 1; i >= 0; i--) {
+    const f = liveFx[i];
+    f.t += dt;
+    f.step(Math.min(1, f.t / f.dur), dt);
+    if (f.t >= f.dur) { f.done(); liveFx.splice(i, 1); }
+  }
+
+  const dp = dust.geometry.attributes.position.array;
+  for (let i = 0; i < dustN; i++) {
+    dp[i * 3 + 1] += dt * .12;
+    if (dp[i * 3 + 1] > 18) dp[i * 3 + 1] = 0;
+  }
+  dust.geometry.attributes.position.needsUpdate = true;
+
+  const v = new THREE.Vector3();
+  TOWERS.forEach(t => {
+    const show = selected === t.i || hovered === t.i;
+    t.tag.classList.toggle('on', show);
+    if (!show) return;
+    v.copy(t.posV); v.y = t.h + 1.1; v.project(camera);
+    t.tag.style.left = ((v.x * .5 + .5) * innerWidth) + 'px';
+    t.tag.style.top = ((-.5 * v.y + .5) * innerHeight) + 'px';
+  });
+
+  composer.render();
+  requestAnimationFrame(frame);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  bloom.setSize(innerWidth, innerHeight);
+});
+
+/* автопоказ: до первого клика крутимся по башням, потом залп выбранной */
+setInterval(() => { if (selected >= 0 && !document.hidden) TOWERS[selected].fire(TOWERS[selected].root); }, 2600);
+let tourT = 3, tourIdx = 0;
+setInterval(() => {
+  if (userPicked || document.hidden) return;
+  if (selected >= 0) {
+    if (--tourT <= 0) { overview(); tourT = 3; }
+  } else if (--tourT <= 0) {
+    select(tourIdx++ % N); tourT = 4;
+  }
+}, 1000);
+
+overview();
+requestAnimationFrame(() => {
+  document.getElementById('load').classList.add('off');
+  setTimeout(() => document.getElementById('load')?.remove(), 700);
+  frame();
+});
+</script>
+</body>
+</html>

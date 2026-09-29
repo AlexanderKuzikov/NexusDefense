@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NEXUS DEFENSE — бестиарий</title>
+<style>
+  :root{
+    --bg:#05070c; --ink:#cfe6ff; --dim:#5d7590;
+    --line:rgba(120,190,255,.16); --panel:rgba(8,14,22,.82);
+    --accent:#ff5a3c;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);overflow:hidden}
+  body{font-family:ui-monospace,"SF Mono",Consolas,"Roboto Mono",monospace;
+    color:var(--ink);-webkit-font-smoothing:antialiased;user-select:none;cursor:default}
+  canvas{display:block}
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+  #hud>*{pointer-events:auto}
+  .vig{position:fixed;inset:0;pointer-events:none;z-index:2;
+    background:radial-gradient(ellipse 120% 90% at 50% 45%,transparent 35%,rgba(0,0,0,.6) 100%),
+      linear-gradient(180deg,rgba(5,8,14,.6) 0%,transparent 18%,transparent 78%,rgba(5,8,14,.75) 100%)}
+
+  header{position:absolute;top:20px;left:22px}
+  header h1{margin:0;font-size:15px;letter-spacing:.42em;font-weight:600;color:#eaf6ff;
+    text-shadow:0 0 18px rgba(255,90,60,.4)}
+  header .sub{margin-top:7px;font-size:10.5px;letter-spacing:.24em;color:var(--dim)}
+  header .bar{width:210px;height:2px;margin-top:11px;
+    background:linear-gradient(90deg,var(--accent),rgba(255,90,60,0));opacity:.75}
+
+  /* сетка бестиария */
+  #grid{position:absolute;left:22px;top:96px;bottom:96px;width:246px;
+    overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:3px;
+    scrollbar-width:thin;padding-right:5px}
+  #grid::-webkit-scrollbar{width:4px}
+  #grid::-webkit-scrollbar-thumb{background:rgba(120,190,255,.22)}
+  .card{display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:8px;
+    padding:6px 8px;background:rgba(10,16,24,.55);border:1px solid transparent;
+    border-left:2px solid currentColor;cursor:pointer;transition:.14s;flex-shrink:0}
+  .card:hover{background:rgba(30,44,60,.7);transform:translateX(2px)}
+  .card.act{background:rgba(40,58,78,.85);border-color:currentColor;box-shadow:0 0 16px rgba(255,90,60,.14)}
+  .card .n{font-size:9.5px;color:var(--dim);letter-spacing:.1em}
+  .card .t{min-width:0}
+  .card .t b{display:block;font-size:10.5px;font-weight:600;letter-spacing:.08em;
+    color:#e8f2fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .t i{display:block;font-size:9px;font-style:normal;color:var(--dim);letter-spacing:.04em;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .tier{font-size:8px;letter-spacing:.1em;padding:2px 4px;border:1px solid currentColor;opacity:.75}
+
+  /* панель */
+  #panel{position:absolute;top:20px;right:20px;width:326px;background:var(--panel);
+    border:1px solid var(--line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%);
+    opacity:0;transform:translateX(14px);transition:opacity .3s,transform .3s;
+    max-height:calc(100% - 110px);overflow:auto;scrollbar-width:thin}
+  #panel.on{opacity:1;transform:none}
+  #panel::-webkit-scrollbar{width:5px}
+  #panel::-webkit-scrollbar-thumb{background:rgba(120,190,255,.25)}
+  .p-top{padding:14px 16px 12px;border-bottom:1px solid var(--line)}
+  .p-idx{font-size:10px;letter-spacing:.3em;color:var(--dim)}
+  .p-name{margin-top:5px;font-size:17px;letter-spacing:.1em;font-weight:600;color:#fff;line-height:1.35}
+  .p-ru{margin-top:3px;font-size:11.5px;color:var(--dim)}
+  .p-role{display:inline-block;margin-top:10px;padding:3px 9px;font-size:9.5px;
+    letter-spacing:.2em;border:1px solid currentColor;text-transform:uppercase}
+  .p-body{padding:13px 16px 16px}
+  .p-desc{font-size:11.5px;line-height:1.72;color:#a9c6de}
+  .stats{margin-top:15px;display:grid;gap:9px}
+  .st{display:grid;grid-template-columns:80px 1fr 46px;align-items:center;gap:9px}
+  .st .k{font-size:9px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase}
+  .st .t{height:4px;background:rgba(255,255,255,.07);position:relative;overflow:hidden}
+  .st .t i{position:absolute;inset:0 auto 0 0;width:0;transition:width .5s cubic-bezier(.2,.9,.2,1)}
+  .st .v{font-size:10.5px;text-align:right;color:#dceaf7}
+  .p-note{margin-top:15px;padding:9px 11px;font-size:10.5px;line-height:1.65;
+    border-left:2px solid currentColor;background:rgba(255,255,255,.035);color:#bfd8ec}
+  .traits{margin-top:13px;display:flex;flex-wrap:wrap;gap:5px}
+  .tr{font-size:8.5px;letter-spacing:.12em;padding:2px 6px;text-transform:uppercase;
+    border:1px solid rgba(255,255,255,.18);color:#9fbdd6}
+
+  #dock{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);display:flex;gap:8px;
+    align-items:center;flex-wrap:wrap;justify-content:center;max-width:min(760px,calc(100% - 40px))}
+  .btn{font:inherit;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink);
+    background:rgba(10,18,28,.72);border:1px solid var(--line);padding:8px 13px;cursor:pointer;
+    transition:.18s;backdrop-filter:blur(10px)}
+  .btn:hover{background:rgba(255,90,60,.12);border-color:rgba(255,90,60,.55);color:#fff}
+  .btn.act{background:rgba(255,90,60,.18);border-color:rgba(255,90,60,.7);color:#fff;
+    box-shadow:inset 0 0 18px rgba(255,90,60,.18)}
+  .hint{position:absolute;right:22px;bottom:22px;font-size:9.5px;letter-spacing:.13em;
+    color:var(--dim);line-height:1.9;text-align:right}
+  .hint b{color:#a7c8e2;font-weight:600}
+
+  .tag{position:absolute;transform:translate(-50%,-100%);padding:4px 9px;font-size:10px;
+    letter-spacing:.16em;white-space:nowrap;background:rgba(6,11,18,.82);
+    border:1px solid currentColor;opacity:0;transition:opacity .2s;pointer-events:none}
+  .tag.on{opacity:1}
+  .tag u{text-decoration:none;color:#fff;margin-left:8px}
+
+  /* хп-бары над врагами */
+  .hp{position:absolute;transform:translate(-50%,-100%);width:56px;height:4px;
+    background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);
+    opacity:0;transition:opacity .25s;pointer-events:none}
+  .hp.on{opacity:1}
+  .hp i{display:block;height:100%;width:100%;background:#ff5a3c;transition:width .18s}
+  .hp.boss{width:96px;height:6px}
+
+  #load{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:var(--bg);
+    transition:opacity .6s}
+  #load.off{opacity:0;pointer-events:none}
+  #load div{font-size:11px;letter-spacing:.4em;color:var(--dim);text-align:center}
+  #load .ln{width:180px;height:1px;margin:14px auto 0;
+    background:linear-gradient(90deg,transparent,#ff5a3c,transparent);
+    animation:sweep 1.1s ease-in-out infinite}
+  @keyframes sweep{0%,100%{opacity:.2;transform:scaleX(.3)}50%{opacity:1;transform:scaleX(1)}}
+  #fail{position:fixed;inset:0;z-index:50;display:none;place-items:center;background:var(--bg);
+    text-align:center;font-size:12px;line-height:2;color:#ff8f8f;padding:30px}
+  #kills{position:absolute;left:22px;bottom:22px;font-size:10px;letter-spacing:.16em;color:var(--dim)}
+  #kills b{color:#ff8a6a;font-weight:600;font-size:12px}
+  @media (max-width:1000px){
+    #grid{width:190px}
+    #panel{width:270px}
+  }
+  @media (max-width:760px){ #grid{display:none} #panel{top:auto;bottom:78px;right:12px} }
+</style>
+</head>
+<body>
+
+<div id="fail"><div>WebGL недоступен в этом браузере.<br>Включи аппаратное ускорение и перезагрузи страницу.</div></div>
+<div id="load"><div>СБОРКА БЕСТИАРИЯ<div class="ln"></div></div></div>
+
+<div class="vig"></div>
+
+<div id="hud">
+  <header>
+    <h1>Nexus Defense</h1>
+    <div class="sub">Бестиарий · 30 видов противника · 5 тиров</div>
+    <div class="bar"></div>
+  </header>
+
+  <div id="grid"></div>
+
+  <aside id="panel">
+    <div class="p-top">
+      <div class="p-idx">— // —</div>
+      <div class="p-name">—</div>
+      <div class="p-ru">—</div>
+      <div class="p-role">—</div>
+    </div>
+    <div class="p-body">
+      <div class="p-desc"></div>
+      <div class="stats"></div>
+      <div class="traits"></div>
+      <div class="p-note"></div>
+    </div>
+  </aside>
+
+  <div id="kills">Уничтожено: <b>0</b></div>
+
+  <div class="hint">
+    <b>ЛКМ</b> — выбрать в карточке или по модели<br>
+    <b>ЛКМ по врагу</b> — нанести урон &nbsp;·&nbsp; <b>пробел / Удар</b> — тоже урон<br>
+    <b>1…0</b> — быстрый выбор &nbsp;·&nbsp; <b>← →</b> — навигация &nbsp;·&nbsp; <b>esc</b> — общий план
+  </div>
+
+  <div id="dock"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { buildScene, metal, neon, dotMat, V, rnd, lerp, ease, hex, addShadow, stepFx, burst, liveFx } from './src/core.js';
+import { ENEMIES_A } from './src/bestiary-a.js';
+import { ENEMIES_B } from './src/bestiary-b.js';
+import { ENEMIES_C } from './src/bestiary-c.js';
+
+const BESTIARY = [...ENEMIES_A, ...ENEMIES_B, ...ENEMIES_C];
+
+/* ===================== рендерер ===================== */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (e) {
+  document.getElementById('fail').style.display = 'grid';
+  document.getElementById('load').classList.add('off');
+  throw e;
+}
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+document.body.appendChild(renderer.domElement);
+
+const { scene, dust, dustGeo } = buildScene(renderer);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, .1, 400);
+camera.position.set(0, 30, 38);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = .075;
+controls.minDistance = 2.4;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * .495;
+controls.target.set(0, 2, 0);
+controls.autoRotateSpeed = .38;
+
+/* точечный свет на выбранного — вытаскивает его из общего поля */
+const focusLight = new THREE.PointLight(0xffffff, 0, 14, 2);
+scene.add(focusLight);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .42, .68, .68);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ===================== расстановка 5×5 ===================== */
+const SPACING = 5.9, COLS = 5;
+const UNITS = [];
+
+BESTIARY.forEach((def, i) => {
+  const built = def.build();
+  const col = i % COLS, row = Math.floor(i / COLS);
+  built.root.position.set((col - 2) * SPACING, 0, (row - 2.5) * SPACING);
+  built.root.rotation.y = (col - 2) * .08 + row * .06;
+  built.root.userData.unitIndex = i;
+  addShadow(built.root);
+  scene.add(built.root);
+  UNITS.push({ i, def, ...built });
+});
+
+/* пьедестал-подложка под каждого — отдельно от модели, чтобы модель можно было вращать */
+const pads = new THREE.Group();
+UNITS.forEach(u => {
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.75, 1.9, .16, 6), metal(0x161c24, .6, .6));
+  pad.position.copy(u.root.position); pad.position.y = .08;
+  pad.receiveShadow = true; pad.userData.unitIndex = u.i; pads.add(pad);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(1.77, .03, 6, 6), neon(u.def.color, 1.8));
+  rim.rotation.x = Math.PI / 2; rim.rotation.z = Math.PI / 6;
+  rim.position.copy(u.root.position); rim.position.y = .17;
+  rim.userData.noShadow = true; rim.userData.unitIndex = u.i; pads.add(rim);
+  u.pad = pad; u.rim = rim;
+});
+scene.add(pads);
+
+/* хп-бар и подпись */
+const hud = document.getElementById('hud');
+UNITS.forEach(u => {
+  const tag = document.createElement('div');
+  tag.className = 'tag';
+  tag.style.color = hex(u.def.color);
+  tag.innerHTML = `<span>${String(u.i + 1).padStart(2, '0')} · ${u.def.id}</span><u>${u.def.ru}</u>`;
+  hud.appendChild(tag); u.tag = tag;
+
+  const hp = document.createElement('div');
+  hp.className = 'hp' + (u.def.stats.boss ? ' boss' : '');
+  hp.innerHTML = '<i></i>';
+  hud.appendChild(hp); u.hpEl = hp; u.hpFill = hp.querySelector('i');
+
+  u.hp = 1;
+});
+
+/* ===================== сетка UI ===================== */
+const gridEl = document.getElementById('grid');
+const TIER_LABEL = { 1: 'T1', 2: 'T2', 3: 'T3', 4: 'T4', 5: 'БОСС' };
+UNITS.forEach(u => {
+  const c = document.createElement('div');
+  c.className = 'card';
+  c.style.color = hex(u.def.color);
+  c.innerHTML = `<span class="n">${String(u.i + 1).padStart(2, '0')}</span>
+    <span class="t"><b>${u.def.id}</b><i>${u.def.ru}</i></span>
+    <span class="tier">${TIER_LABEL[u.def.tier]}</span>`;
+  c.addEventListener('click', () => { userPicked = true; select(u.i); });
+  gridEl.appendChild(c);
+  u.card = c;
+});
+
+/* ===================== панель ===================== */
+const panel = document.getElementById('panel');
+const TRAITS = {
+  flying: ['летающий', 'наземные башни не бьют'],
+  armored: ['броня', 'фронтальный урон режется'],
+  phases: ['фаза', 'периодически неуязвим'],
+  spawner: ['порождает', 'выпускает мелких юнитов'],
+  aura: ['аура', 'эффект вокруг'],
+  zapper: ['глушит', 'башни стреляют вхолостую'],
+  saboteur: ['замедляет', 'отдельная башня -75% скорости'],
+  heavy: ['тяжёлый', 'сопротивление отдаче'],
+  guns: ['бортовое оружие', 'стреляет по башням'],
+  boss: ['босс', 'фаза за 3 полосы'],
+  splits: ['делится', '2 копии на смерти'],
+  warp: ['телепорт', 'пропадает и возвращается'],
+  jump: ['прыжок', 'перепрыгивает узкие места'],
+  dropper: ['десант', 'сбрасывает коконы'],
+  leech: ['вампиризм', 'гасит башню рядом'],
+  clones: ['копии', '7 целей внутри'],
+  aegis: ['ритуальный щит', 'гасит удар циклами']
+};
+
+function renderPanel(u) {
+  const d = u.def, s = d.stats, a = hex(d.color);
+  panel.querySelector('.p-idx').textContent = `ВРАГ ${String(u.i + 1).padStart(2, '0')} / ${BESTIARY.length} · ТИР ${d.tier}`;
+  panel.querySelector('.p-name').textContent = d.id;
+  panel.querySelector('.p-ru').textContent = d.ru;
+  const role = panel.querySelector('.p-role');
+  role.textContent = d.role; role.style.color = a;
+  panel.querySelector('.p-desc').textContent = d.desc;
+
+  const rows = [
+    ['Прочн.', s.hp, Math.round(s.hp * 100) + '%'],
+    ['Скор.', s.spd, s.spd.toFixed(2)],
+    ['Броня', s.arm, Math.round(s.arm * 100) + '%'],
+    ['Урон/с', s.dps, s.dps.toFixed(1)]
+  ];
+  const st = panel.querySelector('.stats');
+  st.innerHTML = '';
+  for (const [k, v, label] of rows) {
+    const row = document.createElement('div');
+    row.className = 'st';
+    row.innerHTML = `<div class="k">${k}</div><div class="t"><i></i></div><div class="v">${label}</div>`;
+    st.appendChild(row);
+    const bar = row.querySelector('i');
+    requestAnimationFrame(() => {
+      bar.style.background = a;
+      bar.style.width = Math.min(100, v / 2.4 * 100) + '%';
+    });
+  }
+  const tr = panel.querySelector('.traits');
+  tr.innerHTML = '';
+  for (const [key, labels] of Object.entries(TRAITS)) {
+    if (!s[key]) continue;
+    labels.forEach(t => {
+      const e = document.createElement('span');
+      e.className = 'tr'; e.textContent = t;
+      e.style.borderColor = a + '55'; e.style.color = a;
+      tr.appendChild(e);
+    });
+  }
+  const note = panel.querySelector('.p-note');
+  note.textContent = d.note; note.style.color = a;
+  panel.classList.add('on');
+}
+
+/* ===================== выбор и камера ===================== */
+let selected = -1, hovered = -1, userPicked = false;
+let kills = 0, killsEl = document.querySelector('#kills b');
+
+['pointerdown', 'keydown', 'wheel'].forEach(ev =>
+  addEventListener(ev, () => userPicked = true, { once: true, passive: true }));
+
+let flight = null;
+function flyTo(pos, target) {
+  flight = { p0: camera.position.clone(), t0: controls.target.clone(), p1: pos, t1: target, k: 0 };
+  controls.enabled = false;
+}
+function select(i) {
+  selected = i;
+  UNITS.forEach(u => u.card.classList.toggle('act', u.i === i));
+  const u = UNITS[i];
+  /* дистанция ближе к клетке, чем к габаритам — иначе мелких юнитов
+     видно с пуляка, а боссы всё равно перекрывают соседей */
+  const dist = 6.4 + u.h * 2.3;
+  const dir = V(.42, 1.15, 1.3).normalize();
+  flyTo(u.root.position.clone().addScaledVector(dir, dist),
+        u.root.position.clone().setY(u.h * .5));
+  renderPanel(u);
+}
+function overview() {
+  selected = -1;
+  panel.classList.remove('on');
+  UNITS.forEach(u => u.card.classList.remove('act'));
+  flyTo(V(0, 30, 38), V(0, 1, 0));
+}
+
+/* ===================== док ===================== */
+const dock = document.getElementById('dock');
+const mkBtn = (label, on, cb) => {
+  const b = document.createElement('button');
+  b.className = 'btn' + (on ? ' act' : '');
+  b.textContent = label;
+  b.addEventListener('click', cb);
+  dock.appendChild(b);
+  return b;
+};
+let autoSpin = true, wire = false;
+mkBtn('Общий план', false, () => overview());
+const btnSpin = mkBtn('Автоповорот', true, () => { autoSpin = !autoSpin; btnSpin.classList.toggle('act', autoSpin); });
+const btnWire = mkBtn('Каркас', false, () => {
+  wire = !wire; btnWire.classList.toggle('act', wire);
+  scene.traverse(o => {
+    if (o.isMesh && o.material && o.material.isMeshStandardMaterial) o.material.wireframe = wire;
+  });
+});
+const btnHit = mkBtn('Удар', false, () => {
+  userPicked = true;
+  if (selected >= 0) damageUnit(UNITS[selected]);
+});
+mkBtn('Сбросить Hp', false, () => {
+  userPicked = true;
+  UNITS.forEach(u => { u.hp = 1; u.hpEl.classList.remove('on'); });
+  kills = 0; killsEl.textContent = '0';
+});
+
+/* ===================== пикинг ===================== */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+let downX = 0, downY = 0;
+
+function pick(ev) {
+  ptr.x = (ev.clientX / innerWidth) * 2 - 1;
+  ptr.y = -(ev.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(ptr, camera);
+  const hits = ray.intersectObjects(scene.children, true);
+  for (const h of hits) {
+    let o = h.object;
+    while (o && o.userData.unitIndex === undefined) o = o.parent;
+    if (o) return o.userData.unitIndex;
+  }
+  return -1;
+}
+
+/* урон выбранному юниту */
+function damageUnit(u) {
+  u.hp -= .25;
+  u.hpEl.classList.add('on');
+  u.hpFill.style.width = Math.max(0, u.hp * 100) + '%';
+  const wp = u.root.position.clone().setY(u.h * .55);
+  burst(scene, u.def.color, wp, 22, 1.4, .2);
+  if (u.hp <= 0) {
+    u.hp = 1;
+    u.hpEl.classList.remove('on');
+    kills++; killsEl.textContent = kills;
+    burst(scene, u.def.color, wp, 60, 2.6, .3);
+  }
+}
+
+renderer.domElement.addEventListener('pointerdown', e => { downX = e.clientX; downY = e.clientY; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
+  const i = pick(e);
+  if (i < 0) { overview(); return; }
+  if (selected === i) damageUnit(UNITS[i]);
+  else select(i);
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (e.buttons) return;
+  hovered = pick(e);
+  renderer.domElement.style.cursor = hovered >= 0 ? 'crosshair' : 'default';
+});
+
+addEventListener('keydown', e => {
+  if (e.key >= '0' && e.key <= '9') {
+    const n = e.key === '0' ? 9 : (+e.key - 1);
+    if (n < 10 && UNITS[n]) select(n);
+  } else if (e.key === 'Escape') overview();
+  else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') select((selected + 1 + BESTIARY.length) % BESTIARY.length);
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') select((selected + BESTIARY.length - 1) % BESTIARY.length);
+  else if (e.key === ' ') {
+    e.preventDefault();
+    if (selected >= 0) damageUnit(UNITS[selected]);
+  }
+});
+
+/* ===================== анимация ===================== */
+const clock = new THREE.Clock();
+let tAcc = 0;
+
+function frame() {
+  const dt = Math.min(clock.getDelta(), .05);
+  tAcc += dt;
+
+  if (flight) {
+    flight.k = Math.min(1, flight.k + dt * 1.9);
+    const e = ease(flight.k);
+    camera.position.lerpVectors(flight.p0, flight.p1, e);
+    controls.target.lerpVectors(flight.t0, flight.t1, e);
+    if (flight.k >= 1) { flight = null; controls.enabled = true; }
+  }
+  controls.autoRotate = autoSpin && !flight && selected < 0;
+  controls.update();
+
+  /* фокус-свет следует за выбранным */
+  if (selected >= 0) {
+    const u = UNITS[selected];
+    focusLight.position.set(
+      u.root.position.x + 1.6, u.root.position.y + u.h * 1.6 + 1.4, u.root.position.z + 2.2
+    );
+    focusLight.intensity = lerp(focusLight.intensity, 26, .1);
+  } else {
+    focusLight.intensity = lerp(focusLight.intensity, 0, .12);
+  }
+
+  UNITS.forEach(u => {
+    const p = u.p;
+    const focus = selected === u.i;
+    const mul = focus ? 2.2 : (hovered === u.i ? 1.4 : 1);
+
+    /* гусеницы и колёса */
+    p.rollers.forEach(r => r.rotation.x -= dt * 2.2 * mul);
+    /* ноги: противофазная походка */
+    p.gait.forEach(g => {
+      const s = Math.sin(tAcc * 3.4 * mul + g.ph);
+      g.hip.rotation.x = s * .5;
+      g.knee.rotation.x = Math.max(0, -s) * .9;
+    });
+    /* роторы */
+    p.rotors.forEach(r => {
+      if (r.mode === 'z') r.o.rotation.z += dt * r.s * mul;
+      else r.o.rotation.y += dt * r.s * mul;
+    });
+    /* свободное вращение и тики полей */
+    p.swarm.forEach(s => {
+      if (s.tick) s.tick(tAcc);
+      else if (s.wave) {
+        /* тело червя: бегущая волна по сегментам */
+        s.wave.forEach((seg, k) => { seg.position.y = .6 + Math.sin(tAcc * s.s - k * .9) * s.amp; });
+      } else if (s.copies) {
+        /* копии зеркала: каждая на своём радиусе */
+        s.copies.forEach(c => {
+          const a = c.a + tAcc * s.s;
+          const pos = V(Math.cos(a) * .55, 1.4 + Math.sin(a * 2) * .18, Math.sin(a) * .55);
+          c.mesh.position.copy(pos); c.edge.position.copy(pos);
+          c.mesh.lookAt(0, 1.4, 0); c.edge.quaternion.copy(c.mesh.quaternion);
+        });
+      } else if (s.ax) s.o.rotation[s.ax] += dt * s.s * mul;
+    });
+    /* пульс */
+    p.pulse.forEach((o, k) => {
+      if (o.isLight) {
+        o.userData.base ??= o.intensity;
+        o.intensity = o.userData.base * (.8 + Math.sin(tAcc * 3 + k) * .2);
+      } else if (o.material?.emissive) {
+        o.userData.baseE ??= o.material.emissiveIntensity;
+        o.material.emissiveIntensity = o.userData.baseE * (.72 + Math.sin(tAcc * 3.4 + k * 1.7) * .38);
+      }
+    });
+
+    /* фаза: мигание прозрачности */
+    if (u.def.stats.phases) {
+      const on = (tAcc * 2.2 + u.i) % 3 < 2;
+      u.root.traverse(o => {
+        if (o.isMesh && o.userData.noShadow && o.material?.transparent) o.material.opacity = on ? 1 : .2;
+      });
+    }
+
+    /* подсветка выбранного */
+    const target = focus ? 1.7 : 1;
+    u.rim.material.emissiveIntensity = lerp(u.rim.material.emissiveIntensity, target, .1);
+    const s = focus ? 1 : 1;
+    u.root.scale.lerp(V(s, s, s), .1);
+  });
+
+  stepFx(dt);
+
+  /* пыль */
+  const dp = dustGeo.attributes.position.array;
+  for (let i = 0; i < dp.length / 3; i++) {
+    dp[i * 3 + 1] += dt * .12;
+    if (dp[i * 3 + 1] > 18) dp[i * 3 + 1] = 0;
+  }
+  dustGeo.attributes.position.needsUpdate = true;
+
+  /* подписи и хп-бары */
+  const v = new THREE.Vector3();
+  UNITS.forEach(u => {
+    const showTag = selected === u.i || hovered === u.i;
+    u.tag.classList.toggle('on', showTag);
+    if (showTag) {
+      v.copy(u.root.position); v.y = u.h + 1.2; v.project(camera);
+      u.tag.style.left = ((v.x * .5 + .5) * innerWidth) + 'px';
+      u.tag.style.top = ((-.5 * v.y + .5) * innerHeight) + 'px';
+    }
+    if (u.hpEl.classList.contains('on')) {
+      v.copy(u.root.position); v.y = u.h + .55; v.project(camera);
+      u.hpEl.style.left = ((v.x * .5 + .5) * innerWidth) + 'px';
+      u.hpEl.style.top = ((-.5 * v.y + .5) * innerHeight) + 'px';
+    }
+  });
+
+  composer.render();
+  requestAnimationFrame(frame);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  bloom.setSize(innerWidth, innerHeight);
+});
+
+/* автопоказ по кругу, пока пользователь не выбрал */
+let tourT = 3, tourIdx = 0;
+setInterval(() => {
+  if (userPicked || document.hidden) return;
+  if (selected >= 0) { if (--tourT <= 0) { overview(); tourT = 3; } }
+  else if (--tourT <= 0) { select(tourIdx++ % BESTIARY.length); tourT = 4; }
+}, 1000);
+
+select(0);
+requestAnimationFrame(() => {
+  document.getElementById('load').classList.add('off');
+  setTimeout(() => document.getElementById('load')?.remove(), 700);
+  frame();
+});
+</script>
+</body>
+</html>

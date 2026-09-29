@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEXUS DEFENSE — набор элементов ландшафта</title>
+<style>
+  :root{
+    --bg:#0a0e15; --pan:#111823; --pan2:#0d131c; --line:#1e2a3a;
+    --txt:#c8d6e5; --dim:#6b7d92; --acc:#36d0ff; --warn:#ff8a3d;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt); overflow:hidden;
+    font:14px/1.45 "Segoe UI", system-ui, sans-serif;
+  }
+  canvas{display:block}
+  #app{position:fixed; inset:0}
+
+  header{
+    position:fixed; top:0; left:0; right:0; padding:16px 22px; z-index:5;
+    background:linear-gradient(180deg, #0a0e15 0%, #0a0e1500 100%);
+    pointer-events:none;
+  }
+  h1{font-size:20px; letter-spacing:.32em; font-weight:600}
+  .sub{color:var(--dim); font-size:12px; margin-top:3px; letter-spacing:.04em}
+
+  #list{
+    position:fixed; top:78px; left:22px; width:228px; max-height:calc(100% - 150px);
+    overflow-y:auto; z-index:5; padding-right:6px;
+  }
+  .grp{color:var(--dim); font-size:10px; letter-spacing:.22em; margin:14px 0 6px; text-transform:uppercase}
+  .grp:first-child{margin-top:0}
+  .it{
+    display:flex; align-items:center; gap:8px; padding:6px 9px; border-radius:5px;
+    cursor:pointer; border:1px solid transparent; font-size:13px;
+  }
+  .it:hover{background:#16202c}
+  .it.on{background:#12222e; border-color:var(--acc)}
+  .sw{width:9px; height:9px; border-radius:2px; flex:0 0 auto}
+  .it .c{margin-left:auto; color:var(--dim); font-size:11px}
+
+  #info{
+    position:fixed; top:78px; right:22px; width:262px; z-index:5;
+    background:var(--pan); border:1px solid var(--line); border-radius:7px; padding:14px;
+  }
+  #info h2{font-size:16px; margin-bottom:2px}
+  #info .kind{color:var(--acc); font-size:10px; letter-spacing:.18em; text-transform:uppercase}
+  #info .note{color:var(--dim); font-size:12px; margin:10px 0 12px; line-height:1.5}
+  .kv{display:flex; justify-content:space-between; padding:3px 0; font-size:12px; border-top:1px solid #16202c}
+  .kv b{font-weight:500; color:var(--dim)}
+  .kv span{color:var(--txt)}
+  .tags{margin-top:10px; display:flex; flex-wrap:wrap; gap:4px}
+  .tag{font-size:10px; padding:2px 6px; border:1px solid var(--line); border-radius:3px; color:var(--dim)}
+  #rule{margin-top:10px; font-size:11px; color:var(--warn); min-height:14px}
+
+  #dock{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    display:flex; gap:7px; z-index:5; flex-wrap:wrap; justify-content:center;
+  }
+  button{
+    background:var(--pan); color:var(--txt); border:1px solid var(--line);
+    padding:7px 13px; border-radius:5px; cursor:pointer; font:inherit; font-size:12px;
+  }
+  button:hover{background:#1a2534; border-color:#2c3d52}
+  button.on{background:#123243; border-color:var(--acc); color:var(--acc)}
+
+  #hint{
+    position:fixed; bottom:20px; right:22px; z-index:5; text-align:right;
+    font-size:11px; color:var(--dim); line-height:1.7;
+  }
+  #stat{position:fixed; bottom:20px; left:22px; z-index:5; font-size:11px; color:var(--dim)}
+  #loading{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:var(--bg); z-index:20; font-size:13px; color:var(--dim); letter-spacing:.2em;
+  }
+  #loading.off{display:none}
+  #live{
+    position:fixed; top:78px; left:50%; transform:translateX(-50%); z-index:5;
+    font-size:12px; color:var(--acc); letter-spacing:.1em; pointer-events:none;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<header>
+  <h1>NEXUS DEFENSE</h1>
+  <div class="sub">набор элементов ландшафта · <span id="count">—</span> деталей</div>
+</header>
+
+<div id="list"></div>
+
+<div id="info">
+  <div class="kind" id="iKind">—</div>
+  <h2 id="iName">—</h2>
+  <div class="note" id="iNote">—</div>
+  <div id="iKv"></div>
+  <div class="tags" id="iTags"></div>
+  <div id="rule"></div>
+</div>
+
+<div id="dock"></div>
+<div id="hint">
+  ЛКМ — orbit · колесо — зум · ПКМ — панорама<br>
+  <span id="modeHint">1…9 — выбор элемента</span>
+</div>
+<div id="stat">—</div>
+<div id="live"></div>
+<div id="loading">ЗАГРУЗКА НАБОРА…</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+               "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ELEMENTS, GROUPS, elementsOf, validateKit, elementMesh, disposeElement, stampElement } from './src/terrain/elements/index.js';
+import { BIOME, BIOME_INFO } from './src/terrain/world.js';
+import { makeWater, makeLava, makeToxic } from './src/terrain/liquids.js';
+import { KIND, LIQUID, baseDisc } from './src/terrain/elements/contract.js';
+
+/* =============================================================
+   ГАЛЕРЕЯ НАБОРА
+   Показывает элементы как детали: слева список, в центре деталь на
+   постаменте с кольцами след��, справа контракт. Режим «Песочница»
+   доказывает главное решение — жёсткое ядро плюс мягкая юбка: детали
+   штампуются друг на друга и видно, что швов нет.
+   Компоновщик карты здесь только ДЕМОНСТРИРУЕТСЯ минимальным кодом;
+   настоящий компоновщик — отдельный компонент.
+   ============================================================= */
+
+const COLOR = {
+  relief: 0x4c5a3e, water: 0x2a6f96, biome: 0x2c4a24, link: 0x3a3f45
+};
+
+/* ---------- сцена ---------- */
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0e15);
+scene.fog = new THREE.Fog(0x0a0e15, 90, 260);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 800);
+camera.position.set(24, 18, 34);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.minDistance = 8;
+controls.maxDistance = 140;
+
+scene.add(new THREE.HemisphereLight(0x8fb4e0, 0x2a2418, 1.15));
+const key = new THREE.DirectionalLight(0xfff2dc, 2.6);
+key.position.set(28, 44, 20);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 1;
+key.shadow.camera.far = 180;
+key.shadow.camera.left = -70; key.shadow.camera.right = 70;
+key.shadow.camera.top = 70;   key.shadow.camera.bottom = -70;
+key.shadow.bias = -0.0004;
+key.shadow.normalBias = 0.6;   /* снимает acne на крутых откосах */
+scene.add(key);
+/* холодная подсветка сзади — отделяет силуэт детали от фона */
+const rim = new THREE.DirectionalLight(0x3f8fff, 1.15);
+rim.position.set(-34, 20, -28);
+scene.add(rim);
+/* тёплый отсвет снизу — чтобы тени не были провалом */
+const bounce = new THREE.DirectionalLight(0xffb066, 0.35);
+bounce.position.set(6, -20, 10);
+scene.add(bounce);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.34, 0.7, 0.85);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------- состояние ---------- */
+let current = ELEMENTS[0];
+let currentInst = null;
+let showRings = true;
+let sandbox = false;
+let autoSpin = true;
+
+const stage = new THREE.Group();
+scene.add(stage);
+
+const pedestal = new THREE.Group();
+stage.add(pedestal);
+
+const disc = baseDisc(34);
+disc.position.y = -0.05;
+disc.material = new THREE.MeshStandardMaterial({
+  map: gridTexture(), color: 0xffffff, roughness: .95, metalness: .05
+});
+disc.receiveShadow = true;
+pedestal.add(disc);
+
+/* Сетка-подложка: даёт масштаб и не даёт подставке слиться с фоном. */
+function gridTexture() {
+  const S = 1024;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(S / 2, S / 2, S * 0.05, S / 2, S / 2, S * 0.5);
+  grd.addColorStop(0, '#26313f');
+  grd.addColorStop(0.62, '#1a2330');
+  grd.addColorStop(1, '#0f151d');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, S, S);
+
+  /* сетка шагом в 2 мировых единицы */
+  const step = S / 17;
+  g.strokeStyle = 'rgba(90,150,190,0.16)';
+  g.lineWidth = 1;
+  for (let k = 0; k <= 17; k++) {
+    g.beginPath(); g.moveTo(k * step, 0); g.lineTo(k * step, S); g.stroke();
+    g.beginPath(); g.moveTo(0, k * step); g.lineTo(S, k * step); g.stroke();
+  }
+  /* оси */
+  g.strokeStyle = 'rgba(60,190,240,0.34)';
+  g.lineWidth = 2;
+  g.beginPath(); g.moveTo(S / 2, 0); g.lineTo(S / 2, S); g.stroke();
+  g.beginPath(); g.moveTo(0, S / 2); g.lineTo(S, S / 2); g.stroke();
+
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+/* Кольца: внешний радиус (юбка) и ядро. Это и есть визуальное
+   объяснение контракта — видно, где деталь жёсткая, а где срастается. */
+const ringGroup = new THREE.Group();
+pedestal.add(ringGroup);
+let outerRing = null, coreRing = null;
+
+function rebuildRings(el) {
+  if (outerRing) { ringGroup.remove(outerRing); outerRing.geometry.dispose(); outerRing.material.dispose(); }
+  if (coreRing) { ringGroup.remove(coreRing); coreRing.geometry.dispose(); coreRing.material.dispose(); }
+  const mk = (r, color, dashed) => {
+    const pts = [];
+    for (let k = 0; k <= 128; k++) {
+      const a = (k / 128) * Math.PI * 2;
+      pts.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
+    }
+    const g = new THREE.BufferGeometry().setFromPoints(pts);
+    const m = new THREE.LineDashedMaterial({
+      color, dashSize: dashed ? 1.6 : 0, gapSize: dashed ? 1.1 : 0,
+      transparent: true, opacity: dashed ? 0.7 : 1,
+      /* ядро рисуем поверх: иначе его не видно под куполом элемента,
+         а именно граница «жёсткое / срастается» главное в контракте */
+      depthTest: !dashed, depthWrite: false
+    });
+    const l = new THREE.Line(g, m);
+    l.computeLineDistances();
+    l.renderOrder = dashed ? 1 : 2;
+    return l;
+  };
+  outerRing = mk(el.radius, 0x3f8fb5, true);
+  coreRing = mk(el.core, 0x54dcff, false);
+  ringGroup.add(outerRing, coreRing);
+  ringGroup.position.y = 0.06;
+}
+
+/* Витрина для элементов-жидкостей.
+   Их собственная заглушка — просто синий диск, поэтому для показа мы
+   собираем из элемента крошечную карту (тем же кодом, что и компоновщик)
+   и пропускаем через настоящие шейдеры. Значит в галерее видно ровно
+   то, что получит карта. */
+const SHOW = { RES: 72, size: 0 };
+let showLiquid = null, showLand = null;
+
+/* Превью жидкости для витрины.
+   Намеренно БЕЗ масок и текстур высот: витрина показывает деталь одну,
+   и ориентация сетки там ни при чём. В композиции жидкость рисует
+   полноценный шейдер из liquids.js по маске владения — он проверен
+   в песочнице. Здесь нужен только внешний вид. */
+const PREVIEW_FRAG = {
+  water: `
+    vec3 shallow = vec3(0.16, 0.44, 0.76);
+    vec3 deep    = vec3(0.015, 0.10, 0.26);
+    vec3 foam    = vec3(0.72, 0.90, 1.00);`,
+  toxic: `
+    vec3 shallow = vec3(0.62, 0.92, 0.22);
+    vec3 deep    = vec3(0.10, 0.26, 0.05);
+    vec3 foam    = vec3(0.78, 1.00, 0.40);`,
+  lava: `
+    vec3 shallow = vec3(1.00, 0.72, 0.26);
+    vec3 deep    = vec3(0.72, 0.16, 0.03);
+    vec3 foam    = vec3(1.00, 0.90, 0.55);`
+};
+
+function previewLiquid(kind, radius, level) {
+  const g = new THREE.CircleGeometry(radius, 72);
+  g.rotateX(-Math.PI / 2);
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { uTime: { value: 0 }, uLevel: { value: level } },
+    vertexShader: `
+      varying vec2 vUv; varying vec3 vW;
+      void main(){
+        vUv = uv;
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        vW = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: `
+      precision highp float;
+      varying vec2 vUv; varying vec3 vW;
+      uniform float uTime; uniform float uLevel;
+      ${PREVIEW_FRAG[kind]}
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5); }
+      float vn(vec2 p){
+        vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+        return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+                   mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
+      }
+      float fb(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<4;i++){ v+=a*vn(p); p*=2.0; a*=0.5; } return v; }
+      void main(){
+        float r = length(vUv - 0.5) * 2.0;
+        if(r > 1.0) discard;
+        float t = uTime;
+        ${kind === 'lava' ? `
+        float heat = fb(vW.xz * 0.85 + vec2(t*0.12, -t*0.06));
+        heat = clamp((heat - 0.5) * 2.4 + 0.5, 0.0, 1.0);
+        float crust = smoothstep(0.52, 0.74, heat);
+        vec3 col = mix(shallow, deep, smoothstep(0.1, 0.7, heat));
+        col = mix(col, vec3(0.06, 0.03, 0.02), crust * 0.9);
+        col += shallow * (1.0 - smoothstep(0.0, 0.22, abs(heat - 0.45))) * 0.8;
+        ` : kind === 'toxic' ? `
+        float n = fb(vW.xz * 1.4 + vec2(0.0, t * 0.25)) * 0.6
+                + fb(vW.xz * 3.1 - vec2(t * 0.2, 0.0)) * 0.4;
+        n = clamp((n - 0.5) * 1.8 + 0.5, 0.0, 1.0);
+        vec3 col = mix(deep, shallow, smoothstep(0.25, 0.7, n));
+        col = mix(col, shallow * 1.3, smoothstep(0.6, 0.82, n) * 0.9);
+        ` : `
+        float w = sin(vW.x * 1.5 + t * 1.5) * 0.42
+                + sin(vW.z * 1.9 - t * 1.2) * 0.34
+                + sin((vW.x + vW.z) * 0.95 + t * 2.1) * 0.28
+                + sin((vW.x - vW.z) * 2.7 - t * 2.8) * 0.16;
+        float e = 0.35;
+        float wx = sin((vW.x+e)*1.5 + t*1.5)*0.42 + sin(vW.z*1.9 - t*1.2)*0.34
+                 + sin((vW.x+e+vW.z)*0.95 + t*2.1)*0.28 + sin((vW.x+e-vW.z)*2.7 - t*2.8)*0.16;
+        float wz = sin(vW.x*1.5 + t*1.5)*0.42 + sin((vW.z+e)*1.9 - t*1.2)*0.34
+                 + sin((vW.x+vW.z+e)*0.95 + t*2.1)*0.28 + sin((vW.x-vW.z-e)*2.7 - t*2.8)*0.16;
+        vec3 n = normalize(vec3((w - wx) * 3.2, 1.0, (w - wz) * 3.2));
+        vec3 V = normalize(cameraPosition - vW);
+        float fres = pow(1.0 - max(dot(V, n), 0.0), 2.2);
+        vec3 col = mix(shallow, deep, 0.62);
+        col = mix(col, shallow * 1.3, fres * 0.4);
+        vec3 L = normalize(vec3(0.45, 0.82, 0.36));
+        col += vec3(1.0) * pow(max(dot(n, normalize(L + V)), 0.0), 110.0) * 0.14;
+        col = mix(col, foam, smoothstep(0.55, 0.99, w * 0.5 + 0.5) * 0.09);
+        `}
+        /* мягкий край и подсветка кромки */
+        col += shallow * smoothstep(0.82, 1.0, r) * 0.5;
+        float a = smoothstep(1.0, 0.86, r);
+        gl_FragColor = vec4(col, a);
+      }`
+  });
+  const m = new THREE.Mesh(g, mat);
+  m.position.y = level;
+  m.renderOrder = 3;
+  m.userData.mat = mat;
+  return m;
+}
+
+function buildShowcase(el, params) {
+  const span = el.radius * 2.35;
+  const RES = SHOW.RES;
+  const STEP = span / (RES - 1);
+  const g = { RES, STEP, WORLD: span, idx: (i, j) => j * RES + i };
+  const h = new Float32Array(RES * RES);
+  const B = new Uint8Array(RES * RES).fill(BIOME.GRASS);
+  /* плоская равнина: видно, что котловина и вода сделаны элементом */
+  const inst = el.instantiate({ ...params, anchorY: 0 });
+  stampElement(inst, h, B, g, { x: 0, z: 0 });
+
+  /* Плита. Рельеф под озером намеренно НЕ строим: витрина показывает
+     саму деталь, а котловина только перекрывала поверхность.
+     Плоский круг + живописная кромка читаются как «залив», и деталь
+     остаётся читаемой. */
+  const plate = new THREE.CircleGeometry(el.core * 1.16, 64);
+  plate.rotateX(-Math.PI / 2);
+  const land = new THREE.Mesh(plate, new THREE.MeshStandardMaterial({
+    color: 0x4a4032, roughness: 1
+  }));
+  land.receiveShadow = true;
+
+  /* Маски для шейдера. В песочнице строки разворачиваются по Z, в
+     витрине — нет: сетка там строится симметрично относительно
+     плоскости, и разворот сдвигал воду с котловины. */
+  const dt = new Float32Array(RES * RES);
+  for (let n = 0; n < RES * RES; n++) dt[n] = h[n];
+  const ht = new THREE.DataTexture(dt, RES, RES, THREE.RedFormat, THREE.FloatType);
+  ht.minFilter = ht.magFilter = THREE.LinearFilter; ht.needsUpdate = true;
+
+  const du = new Uint8Array(RES * RES);
+  const map = { [BIOME.WATER]: 1, [BIOME.TOXIC]: 2, [BIOME.LAVA]: 3 };
+  for (let n = 0; n < RES * RES; n++) du[n] = map[B[n]] || 0;
+  const ut = new THREE.DataTexture(du, RES, RES, THREE.RedFormat, THREE.UnsignedByteType);
+  ut.minFilter = ut.magFilter = THREE.LinearFilter; ut.needsUpdate = true;
+
+  const liq = inst.liquid({ p: inst.params, at: { x: 0, z: 0 } });
+  const grp = new THREE.Group();
+  grp.add(land);
+  if (liq) grp.add(previewLiquid(liq.kind, el.core * 1.04, 0.1));
+  return grp;
+}
+
+function clearShowcase() {
+  if (showLiquid) { pedestal.remove(showLiquid); disposeTree(showLiquid); showLiquid = null; }
+  if (showLand) { pedestal.remove(showLand); disposeTree(showLand); showLand = null; }
+}
+
+function clearPedestal() {
+  clearShowcase();
+  if (currentInst) {
+    pedestal.remove(currentInst.mesh);
+    disposeElement(currentInst);
+    currentInst = null;
+  }
+}
+
+/* ---------- выбор элемента ---------- */
+const listEl = document.getElementById('list');
+const items = [];
+
+for (const g of GROUPS) {
+  const els = elementsOf(g.key);
+  if (!els.length) continue;
+  const h = document.createElement('div');
+  h.className = 'grp';
+  h.textContent = g.title;
+  listEl.appendChild(h);
+  els.forEach((el, i) => {
+    const d = document.createElement('div');
+    d.className = 'it';
+    d.innerHTML = `<span class="sw" style="background:#${COLOR[g.key].toString(16).padStart(6, '0')}"></span>
+      <span>${el.name}</span><span class="c">${el.cost}</span>`;
+    d.addEventListener('click', () => select(el));
+    listEl.appendChild(d);
+    items.push({ el, node: d, key: items.length < 9 ? String(items.length + 1) : '' });
+  });
+}
+
+document.getElementById('count').textContent = ELEMENTS.length;
+
+function select(el) {
+  current = el;
+  items.forEach(it => it.node.classList.toggle('on', it.el === el));
+  clearPedestal();
+  const params = { anchorY: 0 };
+  if (el.profile === 'liquid') {
+    /* витрина через настоящие шейдеры, а не через заглушку детали */
+    showLiquid = buildShowcase(el, params);
+    pedestal.add(showLiquid);
+  } else {
+    currentInst = el.instantiate(params);
+    pedestal.add(elementMesh(currentInst));
+  }
+  pedestal.position.set(0, 0, 0);
+  rebuildRings(el);
+  showInfo(el);
+  if (sandbox) updateLive();
+}
+
+function showInfo(el) {
+  document.getElementById('iKind').textContent = el.kind;
+  document.getElementById('iName').textContent = el.name;
+  document.getElementById('iNote').textContent = el.note || '';
+  document.getElementById('iKv').innerHTML = [
+    ['профиль', el.profile],
+    ['след', `R ${el.radius} / ядро ${el.core}`],
+    ['цена', el.cost],
+    ['метки', el.tags.join(' ')]
+  ].map(([k, v]) => `<div class="kv"><b>${k}</b><span>${v}</span></div>`).join('');
+  document.getElementById('iTags').innerHTML =
+    el.tags.map(t => `<span class="tag">${t}</span>`).join('');
+  document.getElementById('rule').textContent = '';
+}
+
+/* =============================================================
+   ПЕСОЧНИЦА
+   Минимальный стенд, который доказывает контракт: детали ставятся
+   друг на друга во вложенный массив высот, и видно, что стыков нет.
+   ============================================================= */
+const SB = { RES: 90, WORLD: 90 };
+SB.STEP = SB.WORLD / (SB.RES - 1);
+SB.idx = (i, j) => j * SB.RES + i;
+
+let sbH = null, sbB = null, sbMesh = null, sbLiquid = null, sbProps = null;
+let sbLiquidMats = [];
+const placed = [];
+
+function sbBase() {
+  const h = new Float32Array(SB.RES * SB.RES);
+  /* спокойный рельеф с уклоном — на нём сразу видно, что озеро
+     остаётся горизонтальным, а пятно не ломает склон */
+  for (let j = 0; j < SB.RES; j++) {
+    for (let i = 0; i < SB.RES; i++) {
+      const x = i * SB.STEP - SB.WORLD / 2;
+      const z = j * SB.STEP - SB.WORLD / 2;
+      h[SB.idx(i, j)] =
+        Math.sin(x * 0.06) * 2.6 + Math.cos(z * 0.05) * 2.2 + Math.sin((x + z) * 0.03) * 1.6;
+    }
+  }
+  return h;
+}
+
+function sbReset() {
+  sbH = sbBase();
+  sbB = new Uint8Array(SB.RES * SB.RES).fill(BIOME.GRASS);
+  placed.length = 0;
+  rebuildSandbox();
+}
+
+function sbHeightAt(x, z) {
+  const i = Math.max(0, Math.min(SB.RES - 1, Math.round((x + SB.WORLD / 2) / SB.STEP)));
+  const j = Math.max(0, Math.min(SB.RES - 1, Math.round((z + SB.WORLD / 2) / SB.STEP)));
+  return sbH[SB.idx(i, j)];
+}
+
+/* Цвет земли: биом задаёт базу, но поверх него работают высота и
+   уклон — иначе рельеф выглядит как раскрашенная карта. */
+const ROCK_DARK = new THREE.Color(0x2b2f36);
+const SNOW_LIGHT = new THREE.Color(0xd8e4ec);
+
+function paintTerrain(geo, h, B) {
+  const pos = geo.attributes.position;
+  const col = new Float32Array(pos.count * 3);
+  const c = new THREE.Color();
+  for (let j = 0; j < SB.RES; j++) {
+    for (let i = 0; i < SB.RES; i++) {
+      const k = j * SB.RES + i;
+      const y = h[k];
+      /* уклон по соседям */
+      const hx = h[SB.idx(Math.min(SB.RES - 1, i + 1), j)];
+      const hz = h[SB.idx(i, Math.min(SB.RES - 1, j + 1))];
+      const slope = Math.hypot(hx - h[k], hz - h[k]) / SB.STEP;
+
+      c.setHex(BIOME_INFO[B[k]]?.color ?? 0x334422);
+      if (B[k] !== BIOME.ROAD) {
+        /* камень на крутых склонах */
+        c.lerp(ROCK_DARK, Math.min(0.8, slope * 0.34));
+        /* снег только на настоящих вершинах и без пересвета */
+        c.lerp(SNOW_LIGHT, Math.max(0, (y - 15) / 14) * 0.55);
+      }
+      /* мягкое затемнение низины, чтобы рельеф читался объёмом */
+      c.multiplyScalar(0.84 + Math.min(0.24, Math.max(0, y + 4) * 0.018));
+      col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
+    }
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+}
+
+/* Маски для шейдеров: те же, что карта использует, но по сетке стенда. */
+function buildSandboxMasks() {
+  const dt = new Float32Array(SB.RES * SB.RES);
+  for (let j = 0; j < SB.RES; j++) {
+    for (let i = 0; i < SB.RES; i++) {
+      dt[SB.idx(i, SB.RES - 1 - j)] = sbH[SB.idx(i, j)];
+    }
+  }
+  const ht = new THREE.DataTexture(dt, SB.RES, SB.RES, THREE.RedFormat, THREE.FloatType);
+  ht.minFilter = ht.magFilter = THREE.LinearFilter;
+  ht.needsUpdate = true;
+
+  const du = new Uint8Array(SB.RES * SB.RES);
+  const map = { [BIOME.WATER]: 1, [BIOME.TOXIC]: 2, [BIOME.LAVA]: 3 };
+  for (let j = 0; j < SB.RES; j++) {
+    for (let i = 0; i < SB.RES; i++) {
+      du[SB.idx(i, SB.RES - 1 - j)] = map[sbB[SB.idx(i, j)]] || 0;
+    }
+  }
+  const ut = new THREE.DataTexture(du, SB.RES, SB.RES, THREE.RedFormat, THREE.UnsignedByteType);
+  ut.minFilter = ut.magFilter = THREE.LinearFilter;
+  ut.needsUpdate = true;
+  return { ht, ut };
+}
+
+function rebuildLiquids() {
+  if (sbLiquid) { scene.remove(sbLiquid); disposeTree(sbLiquid); }
+  sbLiquid = null;
+  const levels = new Map();
+  for (const inst of placed) {
+    const l = inst.liquid({ p: inst.params, at: inst.at });
+    if (l) levels.set(liqBiome(l.kind), l.level);
+  }
+  if (!levels.size) return;
+  const { ht, ut } = buildSandboxMasks();
+  sbLiquid = new THREE.Group();
+  const mk = (biome, factory) => {
+    if (!levels.has(biome)) return;
+    const inst = placed.find(p => liqBiome(p.liquid({ p: p.params, at: p.at }).kind) === biome);
+    const d = inst?.params?.dropDepth ?? 4.5;
+    sbLiquid.add(factory(ht, ut, levels.get(biome), SB.WORLD, d));
+  };
+  mk(BIOME.WATER, makeWater);
+  mk(BIOME.TOXIC, makeToxic);
+  mk(BIOME.LAVA, makeLava);
+  scene.add(sbLiquid);
+  sbLiquidMats = [];
+  sbLiquid.traverse(o => { if (o.material?.uniforms?.uTime) sbLiquidMats.push(o.material); });
+}
+
+function disposeTree(o) {
+  o.traverse(n => {
+    n.geometry?.dispose();
+    const m = n.material;
+    if (Array.isArray(m)) m.forEach(x => x.dispose());
+    else m?.dispose();
+  });
+}
+
+function rebuildSandbox() {
+  const half = SB.WORLD / 2;
+  const geo = new THREE.PlaneGeometry(SB.WORLD, SB.WORLD, SB.RES - 1, SB.RES - 1);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  for (let j = 0; j < SB.RES; j++) {
+    for (let i = 0; i < SB.RES; i++) {
+      pos.setY(j * SB.RES + i, sbH[SB.idx(i, j)]);
+    }
+  }
+  paintTerrain(geo, sbH, sbB);
+  if (sbMesh) { scene.remove(sbMesh); disposeTree(sbMesh); }
+  /* Гладкие нормали: на отвесах flatShading даёт «пилу» из
+     чередующихся треугольников. Здесь важна читаемая форма рельефа. */
+  sbMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: .92, metalness: .05
+  }));
+  sbMesh.receiveShadow = true;
+  sbMesh.castShadow = true;
+  scene.add(sbMesh);
+
+  rebuildLiquids();
+
+  /* декор элементов.
+     Меши элементов-жидкостей в песочнице НЕ ставим: у них внутри
+     есть собственная заглушка-диск (она нужна для витрины, где
+     деталь показана одна), и она ложится поверх шейдерной воды.
+     В композиции воду рисует шейдер по маске владения. */
+  if (sbProps) { scene.remove(sbProps); disposeTree(sbProps); }
+  sbProps = new THREE.Group();
+  for (const inst of placed) {
+    if (inst.profile === 'liquid') continue;
+    const m = elementMesh(inst);
+    m.position.set(inst.at.x, inst.anchorY, inst.at.z);
+    sbProps.add(m);
+  }
+  scene.add(sbProps);
+  updateStat();
+}
+
+function liqBiome(kind) {
+  return kind === LIQUID.WATER ? BIOME.WATER
+       : kind === LIQUID.TOXIC ? BIOME.TOXIC : BIOME.LAVA;
+}
+
+/* Камера перелетает под режим: витрина детали и обзор песочницы
+   требуют очень разных расстояний, иначе камера оказывается внутри
+   рельефа. */
+const VIEWS = {
+  stage: { p: [24, 18, 34], t: [0, 3, 0] },
+  sandbox: { p: [4, 62, 88], t: [0, 2, 0] }
+};
+let camTween = null;
+
+function flyCam(v, ms = 900) {
+  camTween = {
+    p0: camera.position.clone(), t0: controls.target.clone(),
+    p1: new THREE.Vector3(...v.p), t1: new THREE.Vector3(...v.t),
+    k: 0, dur: ms
+  };
+}
+
+function enterSandbox(on) {
+  sandbox = on;
+  clearPedestal();
+  pedestal.visible = !on;
+  if (on) { sbReset(); updateLive(); flyCam(VIEWS.sandbox); }
+  else { rebuildStage(); flyCam(VIEWS.stage); }
+  btnSandbox.classList.toggle('on', on);
+  document.getElementById('modeHint').textContent = on
+    ? 'ЛКМ по земле — поставить выбранный элемент'
+    : '1…9 — выбор элемента';
+  updateStat();
+}
+
+function updateLive() {
+  document.getElementById('live').textContent =
+    sandbox ? `песочница · ставим: ${current.name}` : '';
+}
+
+function updateRule(x, z) {
+  const h = sbHeightAt(x, z);
+  const slope = Math.abs(sbHeightAt(x + 2, z) - sbHeightAt(x - 2, z)) / 4;
+  const res = current.canPlaceAt({ h, slope, distRoad: 4, near: placed.map(p => p.params.tpl) });
+  document.getElementById('rule').textContent = res.ok ? '' : 'здесь нельзя: ' + res.why;
+  return res;
+}
+
+/* клик по песочнице */
+const ray = new THREE.Raycaster();
+const ptr = new THREE.Vector2();
+let downX = 0, downY = 0;
+renderer.domElement.addEventListener('pointerdown', e => { downX = e.clientX; downY = e.clientY; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
+  if (!sandbox || !sbMesh) return;
+  ptr.x = (e.clientX / innerWidth) * 2 - 1;
+  ptr.y = -(e.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(ptr, camera);
+  const hit = ray.intersectObject(sbMesh)[0];
+  if (!hit) return;
+  const at = { x: hit.point.x, z: hit.point.z };
+  const rule = updateRule(at.x, at.z);
+  if (!rule.ok) return;
+  const anchorY = sbHeightAt(at.x, at.z);
+  const inst = current.instantiate({ anchorY, tpl: current, dir: 0 });
+  inst.at = at;
+  inst.anchorY = anchorY;
+  const r = stampElement(inst, sbH, sbB, SB, at);
+  placed.push(inst);
+  rebuildSandbox();
+  updateStat(r);
+});
+
+function rebuildStage() {
+  if (lavaLight) { scene.remove(lavaLight); lavaLight = null; }
+  if (sbMesh) { scene.remove(sbMesh); sbMesh = null; }
+  if (sbLiquid) { scene.remove(sbLiquid); sbLiquid = null; }
+  if (sbProps) { scene.remove(sbProps); sbProps = null; }
+  sbH = null; sbB = null;
+  pedestal.visible = true;
+  const inst = current.instantiate({ anchorY: 0 });
+  currentInst = inst;
+  pedestal.add(elementMesh(inst));
+  rebuildRings(current);
+}
+
+let lavaLight = null;
+
+/* ---------- док ---------- */
+const dock = document.getElementById('dock');
+function mkBtn(text, fn, toggle) {
+  const b = document.createElement('button');
+  b.className = 'btn';
+  b.textContent = text;
+  b.addEventListener('click', () => {
+    if (toggle) b.classList.toggle('on');
+    fn();
+  });
+  dock.appendChild(b);
+  return b;
+}
+mkBtn('След', () => { showRings = !showRings; ringGroup.visible = showRings; });
+const btnSpin = mkBtn('Поворот', () => { autoSpin = !autoSpin; }, true);
+btnSpin.classList.add('on');
+const btnSandbox = mkBtn('Песочница', () => enterSandbox(!sandbox));
+mkBtn('Сброс', () => { if (sandbox) sbReset(); });
+
+/* ---------- клавиши ---------- */
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'r') { if (sandbox) sbReset(); else updateStat(); }
+  else if (k === 's') enterSandbox(!sandbox);
+  else if (k === ' ') { autoSpin = !autoSpin; btnSpin.classList.toggle('on', autoSpin); e.preventDefault(); }
+  else if (/^[1-9]$/.test(e.key) && items[+e.key - 1]) select(items[+e.key - 1].el);
+});
+
+/* ---------- статистика ---------- */
+function updateStat(lastRes) {
+  const parts = [`элементов в наборе: ${ELEMENTS.length}`];
+  if (sandbox) {
+    parts.push(`поставлено: ${placed.length}`);
+    if (lastRes) parts.push(`затронуто клеток: ${lastRes.cells}`);
+  }
+  document.getElementById('stat').textContent = parts.join(' · ');
+}
+
+/* ---------- запуск ---------- */
+const problems = validateKit();
+if (problems.length) {
+  document.getElementById('loading').textContent = 'КОНТРАКТ СЛОМАН: ' + problems[0];
+} else {
+  document.getElementById('loading').classList.add('off');
+  select(ELEMENTS[0]);
+  updateStat();
+}
+
+const clock = new THREE.Clock();
+let acc = 0;
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  acc += dt;
+
+  if (camTween) {
+    camTween.k = Math.min(1, camTween.k + dt * 1000 / camTween.dur);
+    const s = camTween.k < 0.5
+      ? 2 * camTween.k * camTween.k
+      : 1 - Math.pow(-2 * camTween.k + 2, 2) / 2;
+    camera.position.lerpVectors(camTween.p0, camTween.p1, s);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, s);
+    if (camTween.k >= 1) camTween = null;
+  } else if (autoSpin && !sandbox) {
+    /* витрина: плавный облёт детали */
+    const a = Math.atan2(camera.position.z, camera.position.x) + dt * 0.22;
+    const d = Math.hypot(camera.position.x, camera.position.z);
+    camera.position.x = Math.cos(a) * d;
+    camera.position.z = Math.sin(a) * d;
+  }
+
+  /* огонь и дым внутри деталей */
+  scene.traverse(o => {
+    const m = o.userData?.fireMat || o.userData?.smokeMat;
+    if (m) m.uniforms.uTime.value = acc;
+  });
+  for (const m of sbLiquidMats) m.uniforms.uTime.value = acc;
+  if (showLiquid) {
+    showLiquid.traverse(o => {
+      const m = o.userData?.mat;
+      if (m?.uniforms?.uTime) m.uniforms.uTime.value = acc;
+    });
+  }
+  controls.update();
+  composer.render();
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>

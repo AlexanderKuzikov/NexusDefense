@@ -1,0 +1,1476 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NEXUS DEFENSE — массив башен</title>
+<style>
+  :root{
+    --bg:#05070c;
+    --ink:#cfe6ff;
+    --dim:#5d7590;
+    --line:rgba(120,190,255,.16);
+    --panel:rgba(8,14,22,.82);
+    --accent:#35e0ff;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);overflow:hidden}
+  body{
+    font-family:ui-monospace,"SF Mono",Consolas,"Roboto Mono","JetBrains Mono",monospace;
+    color:var(--ink);-webkit-font-smoothing:antialiased;user-select:none;cursor:default;
+  }
+  canvas{display:block}
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+  #hud > *{pointer-events:auto}
+  .vig{position:fixed;inset:0;pointer-events:none;z-index:2;
+    background:radial-gradient(ellipse 120% 90% at 50% 45%,transparent 35%,rgba(0,0,0,.55) 100%),
+      linear-gradient(180deg,rgba(5,8,14,.55) 0%,transparent 18%,transparent 78%,rgba(5,8,14,.7) 100%);}
+
+  header{position:absolute;top:20px;left:22px}
+  header h1{margin:0;font-size:15px;letter-spacing:.42em;font-weight:600;color:#eaf6ff;
+    text-shadow:0 0 18px rgba(53,224,255,.45)}
+  header .sub{margin-top:7px;font-size:10.5px;letter-spacing:.24em;color:var(--dim)}
+  header .bar{width:210px;height:2px;margin-top:11px;
+    background:linear-gradient(90deg,var(--accent),rgba(53,224,255,0));opacity:.75}
+
+  #panel{position:absolute;top:20px;right:20px;width:322px;background:var(--panel);
+    border:1px solid var(--line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%);
+    opacity:0;transform:translateX(14px);transition:opacity .3s,transform .3s;
+    max-height:calc(100% - 110px);overflow:auto;scrollbar-width:thin}
+  #panel.on{opacity:1;transform:none}
+  #panel::-webkit-scrollbar{width:5px}
+  #panel::-webkit-scrollbar-thumb{background:rgba(120,190,255,.25)}
+  .p-top{padding:14px 16px 12px;border-bottom:1px solid var(--line)}
+  .p-idx{font-size:10px;letter-spacing:.3em;color:var(--dim)}
+  .p-name{margin-top:5px;font-size:17px;letter-spacing:.12em;font-weight:600;color:#fff}
+  .p-ru{margin-top:3px;font-size:11.5px;color:var(--dim)}
+  .p-role{display:inline-block;margin-top:10px;padding:3px 9px;font-size:9.5px;letter-spacing:.2em;
+    border:1px solid currentColor;border-radius:1px;text-transform:uppercase;opacity:.95}
+  .p-body{padding:13px 16px 16px}
+  .p-desc{font-size:11.5px;line-height:1.72;color:#a9c6de}
+  .stats{margin-top:15px;display:grid;gap:9px}
+  .st{display:grid;grid-template-columns:78px 1fr 44px;align-items:center;gap:9px}
+  .st .k{font-size:9px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase}
+  .st .t{height:4px;background:rgba(255,255,255,.07);position:relative;overflow:hidden}
+  .st .t i{position:absolute;inset:0 auto 0 0;width:0;transition:width .5s cubic-bezier(.2,.9,.2,1)}
+  .st .v{font-size:10.5px;text-align:right;color:#dceaf7}
+  .p-note{margin-top:15px;padding:9px 11px;font-size:10.5px;line-height:1.65;
+    border-left:2px solid currentColor;background:rgba(255,255,255,.035);color:#bfd8ec}
+
+  #dock{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);display:flex;gap:8px;
+    align-items:center;flex-wrap:wrap;justify-content:center;max-width:min(900px,calc(100% - 40px))}
+  .btn{font:inherit;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink);
+    background:rgba(10,18,28,.72);border:1px solid var(--line);padding:8px 13px;cursor:pointer;
+    transition:.18s;backdrop-filter:blur(10px)}
+  .btn:hover{background:rgba(53,224,255,.12);border-color:rgba(53,224,255,.55);color:#fff}
+  .btn.act{background:rgba(53,224,255,.18);border-color:rgba(53,224,255,.7);color:#fff;
+    box-shadow:inset 0 0 18px rgba(53,224,255,.18)}
+  .hint{position:absolute;left:22px;bottom:22px;font-size:9.5px;letter-spacing:.13em;
+    color:var(--dim);line-height:1.9}
+  .hint b{color:#a7c8e2;font-weight:600}
+
+  .tag{position:absolute;transform:translate(-50%,-100%);padding:4px 9px;font-size:10px;
+    letter-spacing:.16em;white-space:nowrap;background:rgba(6,11,18,.8);border:1px solid currentColor;
+    opacity:0;transition:opacity .2s;pointer-events:none}
+  .tag.on{opacity:1}
+  .tag u{text-decoration:none;color:#fff;margin-left:8px}
+
+  #load{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:var(--bg);transition:opacity .6s}
+  #load.off{opacity:0;pointer-events:none}
+  #load div{font-size:11px;letter-spacing:.4em;color:var(--dim);text-align:center}
+  #load .ln{width:180px;height:1px;margin:14px auto 0;
+    background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:sweep 1.1s ease-in-out infinite}
+  @keyframes sweep{0%,100%{opacity:.2;transform:scaleX(.3)}50%{opacity:1;transform:scaleX(1)}}
+
+  #fail{position:fixed;inset:0;z-index:50;display:none;place-items:center;background:var(--bg);
+    text-align:center;font-size:12px;line-height:2;color:#ff8f8f;padding:30px}
+  @media (max-width:900px){
+    #panel{width:270px;top:auto;bottom:78px;right:12px;max-height:52%}
+    .hint{display:none}
+  }
+</style>
+</head>
+<body>
+
+<div id="fail"><div>WebGL недоступен в этом браузере.<br>Включи аппаратное ускорение и перезагрузи страницу.</div></div>
+<div id="load"><div>ИНИЦИАЛИЗАЦИЯ МАССИВА<div class="ln"></div></div></div>
+
+<div class="vig"></div>
+
+<div id="hud">
+  <header>
+    <h1>Nexus Defense</h1>
+    <div class="sub">Массив башен · 10 прототипов · техно-футуризм</div>
+    <div class="bar"></div>
+  </header>
+
+  <aside id="panel">
+    <div class="p-top">
+      <div class="p-idx">— // —</div>
+      <div class="p-name">—</div>
+      <div class="p-ru">—</div>
+      <div class="p-role">—</div>
+    </div>
+    <div class="p-body">
+      <div class="p-desc"></div>
+      <div class="stats"></div>
+      <div class="p-note"></div>
+    </div>
+  </aside>
+
+  <div class="hint">
+    <b>ЛКМ</b> — выбрать башню &nbsp;·&nbsp; <b>1…0</b> — быстрый выбор<br>
+    <b>← →</b> — навигация &nbsp;·&nbsp; <b>пробел</b> — тестовая стрельба &nbsp;·&nbsp; <b>esc</b> — общий план
+  </div>
+
+  <div id="dock"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ===================== утилиты ===================== */
+const rnd = (a, b) => a + Math.random() * (b - a);
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const hex = n => '#' + n.toString(16).padStart(6, '0');
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+
+const ACCS = [0x35e0ff, 0xff9d2e, 0x7ad7ff, 0x8cff5a, 0xc46bff, 0xff5edb, 0xffe14d, 0xff5a3c, 0x4d7cff, 0x00ffa3];
+
+/* тёмные базовые цвета при высоком metalness дают чёрные силуэты —
+   поднимаем albedo к читаемой стали, сохраняя оттенок */
+/* мягкая круглая точка — без неё Points рисует серые квадраты */
+const dotTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(.35, 'rgba(255,255,255,.75)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const dotMat = (color, size, opacity) => new THREE.PointsMaterial({
+  color, size, map: dotTex, transparent: true, opacity,
+  blending: THREE.AdditiveBlending, depthWrite: false
+});
+
+const metal = (color = 0x2b333f, m = 0.68, r = 0.42) => {
+  const c = new THREE.Color(color).lerp(new THREE.Color(0x8d99a8), .3);
+  return new THREE.MeshStandardMaterial({ color: c, metalness: Math.min(m, .58), roughness: r });
+};
+
+const neon = (color, i = 2.6) => new THREE.MeshStandardMaterial({
+  color: 0x080c12, emissive: new THREE.Color(color), emissiveIntensity: i * .42,
+  metalness: 0.25, roughness: 0.45
+});
+
+const glassMat = color => new THREE.MeshPhysicalMaterial({
+  color, metalness: 0, roughness: 0.06, transmission: 0.92, thickness: 0.7,
+  ior: 1.9, clearcoat: 1, clearcoatRoughness: 0.05, transparent: true
+});
+
+const addShadow = root => root.traverse(o => {
+  if (o.isMesh && !o.userData.noShadow) { o.castShadow = true; o.receiveShadow = true; }
+});
+
+function idPlate(text, color) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const x = c.getContext('2d');
+  x.font = 'bold 82px ui-monospace, Consolas, monospace';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillStyle = hex(color); x.globalAlpha = .9;
+  x.fillText(text, 128, 66);
+  x.globalCompositeOperation = 'destination-out'; x.globalAlpha = 1;
+  for (let y = 0; y < 128; y += 3) { x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, y, 256, 1.5); }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.5, .75), new THREE.MeshBasicMaterial({
+    map: t, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  m.rotation.x = -Math.PI / 2; m.userData.noShadow = true; m.renderOrder = 3;
+  return m;
+}
+
+/* базовая платформа: гекс-плита, светящийся кант, пилоны, ID-табличка */
+function hexBase(accent, index) {
+  const g = new THREE.Group();
+  const body = metal(0x222a35, .9, .42);
+  const dark = metal(0x141a22, .85, .55);
+
+  const plate = new THREE.Mesh(new THREE.CylinderGeometry(2.15, 2.42, 0.34, 6), body);
+  plate.position.y = .17; g.add(plate);
+
+  const inset = new THREE.Mesh(new THREE.CylinderGeometry(1.78, 1.86, 0.1, 6), dark);
+  inset.position.y = .39; g.add(inset);
+
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(2.16, 0.045, 6, 6), neon(accent, 3.4));
+  rim.rotation.x = Math.PI / 2; rim.rotation.z = Math.PI / 6; rim.position.y = .345; g.add(rim);
+
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(1.78, 6), new THREE.MeshBasicMaterial({
+    color: accent, transparent: true, opacity: .1, blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  glow.rotation.x = -Math.PI / 2; glow.position.y = .4; glow.userData.noShadow = true; g.add(glow);
+
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * Math.PI * 2 + Math.PI / 6;
+    const p = new THREE.Mesh(new THREE.BoxGeometry(.26, .3, .26), body);
+    p.position.set(Math.cos(a) * 1.95, .42, Math.sin(a) * 1.95);
+    p.rotation.y = -a; g.add(p);
+    const led = new THREE.Mesh(new THREE.BoxGeometry(.2, .035, .06), neon(accent, 2.2));
+    led.position.set(Math.cos(a) * 2.06, .56, Math.sin(a) * 2.06);
+    led.rotation.y = -a; led.userData.noShadow = true; g.add(led);
+  }
+  const pl = idPlate(index, accent);
+  pl.position.set(0, .405, 1.15);
+  g.add(pl);
+  return g;
+}
+
+/* ===================== рендерер и сцена ===================== */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (e) {
+  document.getElementById('fail').style.display = 'grid';
+  document.getElementById('load').classList.add('off');
+  throw e;
+}
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05070c);
+scene.fog = new THREE.FogExp2(0x05070c, 0.021);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 400);
+camera.position.set(0, 26, 34);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.075;
+controls.minDistance = 4;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.target.set(0, 3, 0);
+controls.autoRotateSpeed = 0.42;
+
+/* процедурное окружение для отражений — тёмное, с цветными панелями */
+function buildEnvironment() {
+  const s = new THREE.Scene();
+  s.add(new THREE.Mesh(
+    new THREE.SphereGeometry(12, 24, 16),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      vertexShader: 'varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+      fragmentShader: `varying vec3 vP; void main(){
+        float h = normalize(vP).y*.5+.5;
+        gl_FragColor = vec4(mix(vec3(0.04,0.055,0.08), vec3(0.16,0.28,0.44), pow(h,1.4)),1.);
+      }`
+    })
+  ));
+  const panel = (col, pos, w, h) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: col }));
+    m.position.set(...pos); m.lookAt(0, 0, 0); s.add(m);
+  };
+  panel(0x2f7fb8, [-8, 5, 0], 8, 5);
+  panel(0xa02878, [8, 4, 0], 8, 5);
+  panel(0x1d6b7a, [0, 9, 0], 9, 9);
+  panel(0x4a5a30, [0, -6, 6], 12, 6);
+  const pm = new THREE.PMREMGenerator(renderer);
+  const rt = pm.fromScene(s, 0.03);
+  pm.dispose();
+  return rt.texture;
+}
+scene.environment = buildEnvironment();
+
+scene.add(new THREE.HemisphereLight(0x6fa8d8, 0x141c28, 0.8));
+const key = new THREE.DirectionalLight(0xcfe8ff, 1.9);
+key.position.set(14, 26, 12);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 4; key.shadow.camera.far = 90;
+key.shadow.camera.left = -30; key.shadow.camera.right = 30;
+key.shadow.camera.top = 26; key.shadow.camera.bottom = -22;
+key.shadow.bias = -0.0007;
+scene.add(key);
+const fillA = new THREE.PointLight(0x35e0ff, 30, 60, 2); fillA.position.set(-18, 6, 12); scene.add(fillA);
+const fillB = new THREE.PointLight(0xff4fd8, 22, 60, 2); fillB.position.set(18, 7, -10); scene.add(fillB);
+
+/* пол + техносетка */
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), metal(0x070a10, 0.72, 0.4));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true;
+scene.add(floor);
+
+function gridPlane(size, cell, color, opacity) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: {
+      uColor: { value: new THREE.Color(color) },
+      uCell: { value: cell }, uFade: { value: 46 }, uOp: { value: opacity }
+    },
+    vertexShader: `varying vec3 vW; void main(){ vec4 w=modelMatrix*vec4(position,1.); vW=w.xyz;
+      gl_Position=projectionMatrix*viewMatrix*w; }`,
+    fragmentShader: `varying vec3 vW; uniform vec3 uColor; uniform float uCell; uniform float uFade; uniform float uOp;
+      void main(){
+        vec2 p = vW.xz/uCell;
+        vec2 g = abs(fract(p-.5)-.5)/max(fwidth(p),vec2(1e-4));
+        float l = 1.-min(min(g.x,g.y),1.);
+        float d = 1.-smoothstep(0.,uFade,length(vW.xz));
+        float a = l*d*uOp;
+        if(a<0.002) discard;
+        gl_FragColor = vec4(uColor, a);
+      }`
+  }));
+  m.rotation.x = -Math.PI / 2; m.position.y = .012; m.renderOrder = 1; m.userData.noShadow = true;
+  return m;
+}
+scene.add(gridPlane(120, 1, 0x2f7fb8, .22), gridPlane(120, 5, 0x35e0ff, .42));
+
+/* пыль в воздухе */
+const dustN = 900, dustPos = new Float32Array(dustN * 3);
+for (let i = 0; i < dustN; i++) {
+  dustPos[i * 3] = rnd(-46, 46); dustPos[i * 3 + 1] = rnd(.2, 18); dustPos[i * 3 + 2] = rnd(-32, 32);
+}
+const dustGeo = new THREE.BufferGeometry();
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+const dust = new THREE.Points(dustGeo, dotMat(0x6fb6e0, .3, .5));
+scene.add(dust);
+
+/* ===================== эффекты ===================== */
+const liveFx = [];
+
+function beam(color, rCore = .05, rHalo = .16) {
+  const g = new THREE.Group();
+  const mk = (r, op) => {
+    const geo = new THREE.CylinderGeometry(r, r, 1, 8, 1, true);
+    geo.translate(0, .5, 0);
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: op, blending: THREE.AdditiveBlending,
+      depthWrite: false, side: THREE.DoubleSide
+    }));
+    m.userData.noShadow = true; m.renderOrder = 4;
+    return m;
+  };
+  const core = mk(rCore, 1), halo = mk(rHalo, .34);
+  g.add(core, halo);
+  g.userData = { core, halo };
+  g.visible = false;
+  scene.add(g);
+  return g;
+}
+function alignBeam(b, from, to) {
+  b.position.copy(from);
+  const d = new THREE.Vector3().subVectors(to, from);
+  const len = d.length();
+  b.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize());
+  b.scale.set(1, len, 1);
+}
+function fireBeam(b, from, to, dur = .18, grow = 5) {
+  alignBeam(b, from, to);
+  b.visible = true;
+  liveFx.push({
+    t: 0, dur, grow, step(p) {
+      const w = p < .12 ? p / .12 : 1 - (p - .12) / .88 * .55;
+      b.userData.core.material.opacity = w;
+      b.userData.halo.material.opacity = w * .34;
+      const s = 1 + p * grow;
+      b.userData.halo.scale.set(s, 1, s);
+    },
+    done() { b.visible = false; b.userData.halo.scale.set(1, 1, 1); }
+  });
+}
+
+function cone(color) {
+  const geo = new THREE.ConeGeometry(1, 1, 20, 1, true);
+  geo.translate(0, -.5, 0);
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+    depthWrite: false, side: THREE.DoubleSide
+  }));
+  m.userData.noShadow = true; m.renderOrder = 4; m.visible = false;
+  scene.add(m);
+  return m;
+}
+function fireCone(c, from, to, radius, dur = .5) {
+  c.position.copy(from);
+  const d = new THREE.Vector3().subVectors(to, from);
+  const len = d.length();
+  c.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize());
+  c.visible = true;
+  liveFx.push({
+    t: 0, dur, step(p) {
+      c.material.opacity = Math.sin(p * Math.PI) * .5 * (.75 + Math.random() * .45);
+      const s = .35 + p * .8;
+      c.scale.set(radius * s, len, radius * s);
+    },
+    done() { c.visible = false; }
+  });
+}
+
+function arc(count, color) {
+  const g = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({
+    color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  for (let i = 0; i < count; i++) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(14 * 3), 3));
+    const l = new THREE.Line(geo, mat);
+    l.userData.noShadow = true; l.renderOrder = 5;
+    g.add(l);
+  }
+  scene.add(g);
+  return {
+    zap(a, b, life = .16) {
+      g.children.forEach(l => {
+        const p = l.geometry.attributes.position.array;
+        for (let i = 0; i < p.length; i += 3) {
+          const t = i / 3 / 14;
+          p[i] = lerp(a.x, b.x, t) + (i ? rnd(-.16, .16) : 0);
+          p[i + 1] = lerp(a.y, b.y, t) + rnd(-.2, .2);
+          p[i + 2] = lerp(a.z, b.z, t) + (i ? rnd(-.16, .16) : 0);
+        }
+        l.geometry.attributes.position.needsUpdate = true;
+      });
+      g.visible = true;
+      liveFx.push({
+        t: 0, dur: life, step(p) { mat.opacity = p < .25 ? 1 : 1 - (p - .25) / .75; },
+        done() { g.visible = false; }
+      });
+    }
+  };
+}
+
+function burst(color, from, n = 26, spread = 1.6) {
+  const pos = new Float32Array(n * 3), vel = [];
+  for (let i = 0; i < n; i++) {
+    pos.set([from.x, from.y, from.z], i * 3);
+    vel.push(V(rnd(-1, 1), rnd(-.2, 1.4), rnd(-1, 1)).normalize().multiplyScalar(rnd(.8, 3) * spread));
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const p = new THREE.Points(geo, dotMat(color, .22, 1));
+  p.position.copy(from);
+  scene.add(p);
+  liveFx.push({
+    t: 0, dur: .7, step(t) {
+      const a = geo.attributes.position.array;
+      for (let i = 0; i < n; i++) {
+        vel[i].y -= 7 * t * .016;
+        a[i * 3] += vel[i].x * .016; a[i * 3 + 1] += vel[i].y * .016; a[i * 3 + 2] += vel[i].z * .016;
+      }
+      geo.attributes.position.needsUpdate = true;
+      p.material.opacity = 1 - t;
+      p.material.size = .22 * (1 - t * .6);
+    },
+    done() { scene.remove(p); geo.dispose(); p.material.dispose(); }
+  });
+}
+
+/* ===================== строители башен ===================== */
+const BUILDERS = [
+
+  /* 01 · ДУГОВОЙ УЗЕЛ */
+  () => {
+    const A = ACCS[0], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '01'));
+    const dark = metal(0x1b222c, .9, .45), pale = metal(0xb8c4cf, .55, .5);
+
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(.5, .74, .34, 12), dark);
+    col.position.y = .57; root.add(col);
+
+    for (let i = 0; i < 4; i++) {
+      const y = 1.05 + i * .52, r = .66 - i * .075;
+      const t = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.08, .2, 14), pale);
+      t.position.y = y; root.add(t);
+      const s = new THREE.Mesh(new THREE.CylinderGeometry(r * .62, r * .62, .28, 14), metal(0x2e3844, .7, .6));
+      s.position.y = y + .24; root.add(s);
+    }
+    for (let i = 0; i < 7; i++) {
+      const t = new THREE.Mesh(new THREE.TorusGeometry(.5 - i * .028, .052, 6, 22), metal(0xc08a4a, 1, .3));
+      t.rotation.x = Math.PI / 2; t.position.y = 1.16 + i * .27; root.add(t);
+    }
+    const tor = new THREE.Group(); tor.position.y = 3.42;
+    const tm = new THREE.Mesh(new THREE.TorusGeometry(.72, .21, 10, 28), metal(0xcdd6df, .98, .16));
+    tm.rotation.x = Math.PI / 2; tm.scale.y = .55; tor.add(tm);
+    const tcap = new THREE.Mesh(new THREE.CylinderGeometry(.68, .72, .12, 20), dark);
+    tcap.position.y = .14; tor.add(tcap);
+    root.add(tor); spin.push({ o: tor, ax: 'y', s: .55 });
+
+    const prongs = [];
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const p = new THREE.Group();
+      p.position.set(Math.cos(a) * .48, 3.75, Math.sin(a) * .48);
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, .5, 8), pale);
+      stem.position.y = .25; p.add(stem);
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(.11, .34, 8), neon(A, 4));
+      tip.position.y = .6; tip.userData.noShadow = true; p.add(tip); pulse.push(tip);
+      prongs.push(V(Math.cos(a) * .48, 4.2, Math.sin(a) * .48));
+      root.add(p);
+    }
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(.16, 12, 10), neon(0xffffff, 5));
+    crown.position.y = 4.3; crown.userData.noShadow = true; root.add(crown); pulse.push(crown);
+    const light = new THREE.PointLight(A, 26, 12, 2); light.position.y = 3.6; root.add(light); pulse.push(light);
+
+    const z = arc(4, 0xcdf6ff);
+    return {
+      root, h: 4.6, spin, bob, pulse,
+      fire(g) {
+        const a = prongs[Math.floor(Math.random() * 3)];
+        z.zap(g.worldToLocal(a.clone()), V(rnd(-5, 5), rnd(.1, 1.2), rnd(-5, 5)));
+        burst(A, a, 18);
+      }
+    };
+  },
+
+  /* 02 · ИМПУЛЬСНАЯ ПУШКА */
+  () => {
+    const A = ACCS[1], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '02'));
+    const dark = metal(0x232a34, .92, .4), hull = metal(0x39424f, .88, .35), warm = metal(0xd08a3a, .95, .28);
+
+    const ped = new THREE.Mesh(new THREE.CylinderGeometry(.95, 1.15, .5, 12), dark);
+    ped.position.y = .65; root.add(ped);
+    const yaw = new THREE.Group(); yaw.position.y = .9; root.add(yaw);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.0, .06, 6, 24), neon(A, 2.4));
+    ring.rotation.x = Math.PI / 2; yaw.add(ring);
+    for (const s of [-1, 1]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(.18, 1.0, .38), hull);
+      arm.position.set(s * .5, .55, 0); yaw.add(arm);
+    }
+    const barrel = new THREE.Group(); barrel.position.y = 1.0; yaw.add(barrel);
+    const breech = new THREE.Mesh(new THREE.CylinderGeometry(.42, .5, .9, 12), dark);
+    breech.rotation.x = Math.PI / 2; breech.position.z = .2; barrel.add(breech);
+
+    const recoil = new THREE.Group(); barrel.add(recoil);
+    for (const s of [-1, 1]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(.12, .12, 3.1), warm);
+      rail.position.set(s * .19, 0, 1.9); recoil.add(rail);
+    }
+    for (let i = 0; i < 5; i++) {
+      const t = new THREE.Group(); t.position.z = .85 + i * .56;
+      t.add(new THREE.Mesh(new THREE.TorusGeometry(.36, .1, 8, 18), hull));
+      for (let k = 0; k < 3; k++) {
+        const a = k / 3 * Math.PI * 2;
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(.09, .09, .22, 8), neon(A, 1.6));
+        cap.position.set(Math.cos(a) * .36, Math.sin(a) * .36, 0);
+        cap.rotation.x = Math.PI / 2; cap.userData.noShadow = true;
+        t.add(cap); pulse.push(cap);
+      }
+      recoil.add(t);
+      spin.push({ o: t, ax: 'z', s: 1.9 });
+    }
+    const brake = new THREE.Mesh(new THREE.CylinderGeometry(.34, .28, .5, 8), dark);
+    brake.rotation.x = Math.PI / 2; brake.position.z = 3.4; recoil.add(brake);
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      const port = new THREE.Mesh(new THREE.BoxGeometry(.1, .1, .5), neon(A, .8));
+      port.position.set(Math.cos(a) * .3, Math.sin(a) * .3, 3.4);
+      port.userData.noShadow = true; recoil.add(port);
+    }
+    const railGlow = new THREE.Mesh(new THREE.BoxGeometry(.06, .06, 3.0), neon(A, 3.2));
+    railGlow.position.y = .12; railGlow.userData.noShadow = true; recoil.add(railGlow); pulse.push(railGlow);
+    const muzzle = new THREE.Mesh(new THREE.TorusGeometry(.3, .05, 6, 20), neon(0xffd08a, 4));
+    muzzle.position.z = 3.66; muzzle.userData.noShadow = true; recoil.add(muzzle); pulse.push(muzzle);
+
+    const bm = beam(0xffb45a, .07, .3);
+    let kick = 0;
+    return {
+      root, h: 2.6, spin, bob, pulse,
+      fire(g) {
+        const m = g.worldToLocal(V(0, 1.9, 3.7));
+        fireBeam(bm, m, V(rnd(-3, 3), .2, rnd(14, 22)), .22, 7);
+        burst(0xffc070, m, 22, 1.4);
+        kick = 1;
+      },
+      tick(g, dt) {
+        kick = Math.max(0, kick - dt * 5);
+        recoil.position.z = -kick * .42;
+      }
+    };
+  },
+
+  /* 03 · КРИО-ВЕНТИЛЬ */
+  () => {
+    const A = ACCS[2], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '03'));
+    const dark = metal(0x1e2833, .9, .42), hull = metal(0x3c4a58, .85, .38);
+
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(.55, .85, 1.5, 6), dark);
+    col.position.y = 1.15; root.add(col);
+    for (let i = 0; i < 3; i++) {
+      const b = new THREE.Mesh(new THREE.TorusGeometry(.7, .05, 6, 6), neon(A, 2.6));
+      b.rotation.x = Math.PI / 2; b.position.y = .55 + i * .5; root.add(b);
+    }
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2 + .5;
+      const claw = new THREE.Group(); claw.rotation.y = -a; root.add(claw);
+      const seg = new THREE.Mesh(new THREE.BoxGeometry(.22, 1.35, .3), hull);
+      seg.position.set(0, 1.9, .62); seg.rotation.x = -.3; claw.add(seg);
+      const joint = new THREE.Mesh(new THREE.SphereGeometry(.17, 10, 8), dark);
+      joint.position.set(0, 1.35, .42); claw.add(joint);
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(.12, .55, 8), neon(A, 3));
+      tip.position.set(0, 2.75, .98); tip.rotation.x = .5; tip.userData.noShadow = true;
+      claw.add(tip); pulse.push(tip);
+    }
+    const cry = new THREE.Mesh(new THREE.OctahedronGeometry(.66, 0), glassMat(0x9fe4ff));
+    cry.position.y = 2.2; cry.userData.noShadow = true; root.add(cry);
+    const cryWire = new THREE.Mesh(new THREE.OctahedronGeometry(.68, 0), new THREE.MeshBasicMaterial({
+      color: A, wireframe: true, transparent: true, opacity: .55, blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    cryWire.position.y = 2.2; cryWire.userData.noShadow = true; root.add(cryWire);
+    bob.push({ o: cry, amp: .09, s: 1.1, ph: 0 });
+    bob.push({ o: cryWire, amp: .09, s: 1.1, ph: 0 });
+    spin.push({ o: cry, ax: 'y', s: .5 });
+    spin.push({ o: cryWire, ax: 'y', s: .5 });
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(1.1, .03, 6, 40), neon(A, 3.4));
+    halo.rotation.set(1.1, 0, .3); halo.position.y = 2.2; halo.userData.noShadow = true;
+    root.add(halo); spin.push({ o: halo, ax: 'y', s: -.7 });
+    const light = new THREE.PointLight(A, 22, 11, 2); light.position.y = 2.2; root.add(light); pulse.push(light);
+
+    const N = 160, pp = new Float32Array(N * 3), seeds = [];
+    for (let i = 0; i < N; i++) {
+      const a = rnd(0, 6.28), r = rnd(.2, 1.5);
+      seeds.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, y: rnd(0, 3.4), v: rnd(.6, 1.7) });
+    }
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute('position', new THREE.BufferAttribute(pp, 3));
+    const snow = new THREE.Points(pg, dotMat(0xcfefff, .12, .8));
+    snow.userData.noShadow = true; root.add(snow);
+    const dome = cone(0x9fe4ff);
+    return {
+      root, h: 3.2, spin, bob, pulse,
+      extra: [() => {
+        const a = pg.attributes.position.array;
+        seeds.forEach((s, i) => {
+          s.y -= s.v * .016; if (s.y < 0) s.y = 3.4;
+          a[i * 3] = s.x; a[i * 3 + 1] = s.y; a[i * 3 + 2] = s.z;
+        });
+        pg.attributes.position.needsUpdate = true;
+      }],
+      fire(g) {
+        const m = g.worldToLocal(V(0, 2.2, 0));
+        dome.position.copy(m);
+        dome.quaternion.setFromUnitVectors(V(0, 1, 0), V(0, -1, 0));
+        dome.visible = true;
+        liveFx.push({
+          t: 0, dur: 1.5, step(p) {
+            dome.material.opacity = Math.sin(p * Math.PI) * .2;
+            dome.scale.set(3.4 * p, 4, 3.4 * p);
+          },
+          done() { dome.visible = false; }
+        });
+        burst(A, m, 24, 1.1);
+      }
+    };
+  },
+
+  /* 04 · РОЙ-КАССЕТА */
+  () => {
+    const A = ACCS[3], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [], irises = [], tubes = [];
+    root.add(hexBase(A, '04'));
+    const dark = metal(0x1f272f, .92, .45), hull = metal(0x39443f, .85, .4);
+
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(1.12, 1.3, .9, 12), dark);
+    body.position.y = .85; root.add(body);
+
+    const cells = [[0, 0]];
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      cells.push([Math.cos(a) * .46, Math.sin(a) * .46]);
+    }
+    cells.forEach(([x, z]) => {
+      const t = new THREE.Group(); t.position.set(x, 1.3, z); root.add(t);
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(.2, .22, .95, 10), hull);
+      tube.position.y = .47; t.add(tube);
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(.2, .035, 6, 14), neon(A, 2.2));
+      lip.rotation.x = Math.PI / 2; lip.position.y = .95; lip.userData.noShadow = true; t.add(lip);
+      for (let k = 0; k < 3; k++) {
+        const a2 = k / 3 * Math.PI * 2;
+        const pet = new THREE.Mesh(new THREE.BoxGeometry(.1, .34, .13), dark);
+        pet.position.set(Math.cos(a2) * .22, .82, Math.sin(a2) * .22);
+        pet.rotation.z = -.4; t.add(pet);
+        irises.push({ o: pet, base: a2, open: 0 });
+      }
+      const mz = new THREE.Group(); mz.position.y = .3; t.add(mz);
+      mz.add(new THREE.Mesh(new THREE.CylinderGeometry(.1, .1, .4, 8), metal(0xc8d2cc, .7, .4)));
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(.1, .22, 8), neon(0xff6a4a, 2.4));
+      nose.position.y = .3; nose.userData.noShadow = true; mz.add(nose);
+      tubes.push(mz);
+    });
+
+    const mast = new THREE.Group(); mast.position.set(1.15, 1.5, .3); root.add(mast);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, 1.2, 8), hull);
+    pole.position.y = .5; mast.add(pole);
+    const dish = new THREE.Group(); dish.position.y = 1.1; mast.add(dish);
+    const dm = new THREE.Mesh(new THREE.SphereGeometry(.34, 14, 10, 0, 6.3, 0, 1.2), metal(0xa8b6c4, .9, .2));
+    dm.material.side = THREE.DoubleSide; dm.rotation.x = Math.PI * .52; dish.add(dm);
+    const dfeed = new THREE.Mesh(new THREE.ConeGeometry(.05, .3, 6), neon(A, 3));
+    dfeed.position.set(0, -.2, .12); dfeed.rotation.x = Math.PI; dfeed.userData.noShadow = true;
+    dish.add(dfeed); pulse.push(dfeed);
+    spin.push({ o: dish, ax: 'y', s: 1.5 });
+    const blink = new THREE.Mesh(new THREE.SphereGeometry(.09, 8, 8), neon(0xff4a4a, 4));
+    blink.position.y = 2.1; blink.userData.noShadow = true; root.add(blink);
+    const light = new THREE.PointLight(A, 16, 9, 2); light.position.y = 1.5; root.add(light); pulse.push(light);
+
+    const bms = tubes.map(() => beam(0xbfffa0, .035, .12));
+    let open = 0;
+    return {
+      root, h: 2.4, spin, bob, pulse,
+      fire(g) {
+        open = 1;
+        tubes.forEach((mz, i) => setTimeout(() => {
+          if (!mz.parent) return;
+          const start = mz.getWorldPosition(V());
+          const a = rnd(0, 6.28), d = rnd(7, 13);
+          const end = V(start.x + Math.cos(a) * d, .2, start.z + Math.sin(a) * d);
+          fireBeam(bms[i], g.worldToLocal(start.clone()), end, .3, 2);
+          burst(0xd8ffb0, end, 14, 1.1);
+        }, i * 85));
+      },
+      tick(g, dt) {
+        open = Math.max(0, open - dt * 1.4);
+        irises.forEach(p => {
+          p.open = lerp(p.open, open, .18);
+          p.o.position.set(Math.cos(p.base) * (.22 + p.open * .12), .82 - p.open * .16, Math.sin(p.base) * (.22 + p.open * .12));
+          p.o.rotation.z = -.4 - p.open * .8;
+        });
+        blink.visible = (performance.now() % 900) < 480;
+      }
+    };
+  },
+
+  /* 05 · ПЛАЗМЕННОЕ ЯДРО */
+  () => {
+    const A = ACCS[4], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '05'));
+    const dark = metal(0x211a2a, .92, .4), hull = metal(0x3b3149, .85, .38);
+
+    const tips = [];
+    for (let i = 0; i < 4; i++) {
+      const a = i / 4 * Math.PI * 2 + Math.PI / 4;
+      const p = new THREE.Group(); p.position.set(Math.cos(a) * 1.05, .4, Math.sin(a) * 1.05);
+      p.rotation.y = -a; root.add(p);
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.17, .26, 2.1, 8), dark);
+      shaft.position.y = 1.05; p.add(shaft);
+      for (let k = 0; k < 6; k++) {
+        const t = new THREE.Mesh(new THREE.TorusGeometry(.24, .045, 6, 16), hull);
+        t.rotation.x = Math.PI / 2; t.position.y = .5 + k * .28; p.add(t);
+      }
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(.16, 12, 10), neon(A, 3.6));
+      cap.position.y = 2.2; cap.userData.noShadow = true; p.add(cap); pulse.push(cap);
+      tips.push(V(Math.cos(a) * 1.05, 2.6, Math.sin(a) * 1.05));
+    }
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(.62, 2), neon(A, 3.2));
+    core.position.y = 2.35; core.userData.noShadow = true; root.add(core);
+    const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(.78, 1), glassMat(0xd9a8ff));
+    shell.position.y = 2.35; shell.userData.noShadow = true; root.add(shell);
+    bob.push({ o: core, amp: .1, s: .9, ph: 0 });
+    bob.push({ o: shell, amp: .1, s: .9, ph: 0 });
+    spin.push({ o: core, ax: 'y', s: .35 });
+    [[1.0, 0, 0, .9], [1.25, Math.PI / 2, .4, -.6], [1.45, 0, Math.PI / 2, 1.2]].forEach(([r, rx, ry, sp]) => {
+      const g = new THREE.Group();
+      const t = new THREE.Mesh(new THREE.TorusGeometry(r, .045, 8, 48), neon(A, 2.8));
+      t.userData.noShadow = true; g.add(t);
+      for (let i = 0; i < 4; i++) {
+        const a = i / 4 * Math.PI * 2;
+        const n = new THREE.Mesh(new THREE.BoxGeometry(.16, .16, .16), metal(0x2a2135, .7, .5));
+        n.position.set(Math.cos(a) * r, Math.sin(a) * r, 0); n.userData.noShadow = true; g.add(n);
+      }
+      g.rotation.set(rx, ry, 0); g.position.y = 2.35;
+      root.add(g); spin.push({ o: g, ax: 'y', s: sp });
+    });
+    const tethers = tips.map(() => {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(.035, .035, 1, 6), new THREE.MeshBasicMaterial({
+        color: 0xe0b0ff, transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false
+      }));
+      m.geometry.translate(0, .5, 0); m.userData.noShadow = true; root.add(m); return m;
+    });
+    const light = new THREE.PointLight(A, 34, 14, 2); light.position.y = 2.4; root.add(light); pulse.push(light);
+    const bm = beam(0xd8a0ff, .08, .34);
+    return {
+      root, h: 3.2, spin, bob, pulse,
+      extra: [t => {
+        const c = root.localToWorld(V(0, 2.35, 0));
+        tips.forEach((tip, i) => {
+          const a = root.localToWorld(tip.clone());
+          const d = new THREE.Vector3().subVectors(c, a);
+          tethers[i].position.copy(a);
+          tethers[i].quaternion.setFromUnitVectors(V(0, 1, 0), d.clone().normalize());
+          tethers[i].scale.set(1, d.length(), 1);
+          tethers[i].material.opacity = .45 + Math.sin(t * 8 + i) * .3;
+        });
+      }],
+      fire(g) {
+        const m = g.worldToLocal(V(0, 2.35, 0));
+        fireBeam(bm, m, V(rnd(-4, 4), .3, rnd(11, 19)), .34, 3);
+        burst(A, m, 30, 1.6);
+      }
+    };
+  },
+
+  /* 06 · ПРИЗМА-РАСЩЕПИТЕЛЬ */
+  () => {
+    const A = ACCS[5], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '06'));
+    const dark = metal(0x2a1f2a, .92, .4), hull = metal(0x4a3b48, .85, .35);
+
+    const pylon = new THREE.Mesh(new THREE.CylinderGeometry(.22, .55, 2.2, 6), dark);
+    pylon.position.y = 1.5; root.add(pylon);
+    for (let i = 0; i < 3; i++) {
+      const t = new THREE.Mesh(new THREE.TorusGeometry(.42 - i * .05, .045, 6, 6), neon(A, 2.4));
+      t.rotation.x = Math.PI / 2; t.rotation.z = Math.PI / 6;
+      t.position.y = 1.0 + i * .55; root.add(t);
+    }
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(.14, 1.0, .5), hull);
+      blade.position.set(Math.cos(a) * .42, 2.6, Math.sin(a) * .42);
+      blade.rotation.y = -a; root.add(blade);
+      const edg = new THREE.Mesh(new THREE.BoxGeometry(.05, .9, .06), neon(A, 3.2));
+      edg.position.set(Math.cos(a) * .62, 2.6, Math.sin(a) * .62);
+      edg.rotation.y = -a; edg.userData.noShadow = true; root.add(edg); pulse.push(edg);
+    }
+    const prism = new THREE.Group(); prism.position.y = 3.55; root.add(prism);
+    const pcore = new THREE.Mesh(new THREE.OctahedronGeometry(.78, 0), glassMat(0xffb0f0));
+    pcore.userData.noShadow = true; prism.add(pcore);
+    const pwire = new THREE.Mesh(new THREE.OctahedronGeometry(.8, 0), new THREE.MeshBasicMaterial({
+      color: A, wireframe: true, transparent: true, opacity: .6, blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    pwire.userData.noShadow = true; prism.add(pwire);
+    for (let i = 0; i < 3; i++) {
+      const r = 1.05 + i * .16;
+      const t = new THREE.Mesh(new THREE.TorusGeometry(r, .022, 6, 40), neon(A, 3.6 - i));
+      t.rotation.set(i * .7, i * 1.1, .3); t.userData.noShadow = true;
+      prism.add(t); spin.push({ o: t, ax: 'y', s: (i % 2 ? -1 : 1) * (.5 + i * .28) });
+    }
+    spin.push({ o: pcore, ax: 'y', s: .42 });
+    spin.push({ o: pwire, ax: 'y', s: .42 });
+    bob.push({ o: prism, amp: .13, s: .8, ph: 0 });
+    const light = new THREE.PointLight(A, 28, 12, 2); light.position.y = 3.4; root.add(light); pulse.push(light);
+    const bms = [0, 1, 2].map(() => beam(0xff8ae0, .05, .18));
+    return {
+      root, h: 4.3, spin, bob, pulse,
+      fire(g) {
+        const m = g.worldToLocal(V(0, 3.55, 0));
+        const a0 = rnd(0, 6.28);
+        for (let i = 0; i < 3; i++) {
+          const a = a0 + i / 3 * Math.PI * 2 + .25;
+          fireBeam(bms[i], m, V(m.x + Math.cos(a) * 14, .25, m.z + Math.sin(a) * 14), .26, 3);
+        }
+        burst(A, m, 26, 1.4);
+      }
+    };
+  },
+
+  /* 07 · ГРОЗОВАЯ ШПИЛЬ */
+  () => {
+    const A = ACCS[6], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [], nodes = [];
+    root.add(hexBase(A, '07'));
+    const dark = metal(0x232a2a, .9, .42), hull = metal(0x3d4642, .85, .35), pale = metal(0xc8d2c8, .6, .45);
+
+    for (let s = 0; s < 3; s++) {
+      const r = 1.0 - s * .22;
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(r, r + .16, .5, 8), dark);
+      base.position.y = .65 + s * .48; root.add(base);
+      const tr = new THREE.Mesh(new THREE.TorusGeometry(r + .1, .04, 6, 8), neon(A, 2.6));
+      tr.rotation.x = Math.PI / 2; tr.position.y = .9 + s * .48; tr.userData.noShadow = true;
+      root.add(tr); pulse.push(tr);
+      for (let i = 0; i < 4; i++) {
+        const a = i / 4 * Math.PI * 2 + s * .3;
+        const sp = new THREE.Mesh(new THREE.ConeGeometry(.07, .55, 6), pale);
+        sp.position.set(Math.cos(a) * (r + .16), .9 + s * .48, Math.sin(a) * (r + .16));
+        root.add(sp);
+        nodes.push(V(Math.cos(a) * (r + .3), 1.05 + s * .48, Math.sin(a) * (r + .3)));
+      }
+    }
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.2, .34, 3.6, 8), hull);
+    shaft.position.y = 3.1; root.add(shaft);
+    for (let i = 0; i < 4; i++) {
+      const t = new THREE.Mesh(new THREE.TorusGeometry(.38, .035, 6, 20), metal(0xc0a040, 1, .3));
+      t.rotation.x = Math.PI / 2; t.position.y = 1.9 + i * .62; root.add(t);
+    }
+    const top = new THREE.Group(); top.position.y = 5.3; root.add(top);
+    const crystal = new THREE.Mesh(new THREE.ConeGeometry(.3, 1.15, 6), glassMat(0xfff0a0));
+    crystal.userData.noShadow = true; top.add(crystal);
+    const cglow = new THREE.Mesh(new THREE.ConeGeometry(.32, 1.17, 6), new THREE.MeshBasicMaterial({
+      color: A, wireframe: true, transparent: true, opacity: .5, blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    cglow.userData.noShadow = true; top.add(cglow);
+    spin.push({ o: top, ax: 'y', s: 1.1 });
+    const tipN = new THREE.Mesh(new THREE.SphereGeometry(.14, 10, 8), neon(0xffffff, 5));
+    tipN.position.y = .68; tipN.userData.noShadow = true; top.add(tipN); pulse.push(tipN);
+    const corona = new THREE.Mesh(new THREE.TorusGeometry(.75, .03, 6, 32), neon(A, 3.6));
+    corona.rotation.x = Math.PI / 2; corona.userData.noShadow = true; top.add(corona);
+    spin.push({ o: corona, ax: 'y', s: -2.2 });
+    const light = new THREE.PointLight(A, 30, 14, 2); light.position.y = 5.3; root.add(light); pulse.push(light);
+
+    const z = arc(5, 0xfff6c0);
+    return {
+      root, h: 6.0, spin, bob, pulse,
+      fire(g) {
+        const t = g.localToWorld(V(0, 5.9, 0));
+        nodes.forEach((n, i) => setTimeout(() => z.zap(g.worldToLocal(n.clone()), V(rnd(-6, 6), .15, rnd(-6, 6)), .14), i * 30));
+        setTimeout(() => burst(A, t, 20, 1.3), 20);
+      }
+    };
+  },
+
+  /* 08 · ПЛАВИЛЬНЯ */
+  () => {
+    const A = ACCS[7], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '08'));
+    const dark = metal(0x2a1f1c, .92, .42), hull = metal(0x4a3a33, .85, .38), hot = metal(0xc04028, .95, .35);
+
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.35, .7, 10), dark);
+    base.position.y = .75; root.add(base);
+    for (let i = 0; i < 4; i++) {
+      const a = i / 4 * Math.PI * 2 + Math.PI / 4;
+      const strut = new THREE.Mesh(new THREE.BoxGeometry(.2, 1.15, .28), hull);
+      strut.position.set(Math.cos(a) * .82, 1.55, Math.sin(a) * .82);
+      strut.rotation.y = -a; root.add(strut);
+      const foot = new THREE.Mesh(new THREE.CylinderGeometry(.2, .26, .16, 8), hot);
+      foot.position.set(Math.cos(a) * .95, .48, Math.sin(a) * .95); root.add(foot);
+    }
+    const head = new THREE.Group(); head.position.y = 2.1; root.add(head);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(.3, .55, .7, 10), dark);
+    neck.position.y = -.1; head.add(neck);
+    for (let i = 0; i < 4; i++) {
+      const t = new THREE.Group(); t.position.y = .18 + i * .3;
+      const r = new THREE.Mesh(new THREE.TorusGeometry(.62 - i * .07, .07, 8, 20), hot);
+      r.rotation.x = Math.PI / 2; t.add(r);
+      head.add(t);
+      spin.push({ o: t, ax: 'y', s: 1.2 + i * .35 });
+    }
+    const hornMat = hull.clone(); hornMat.side = THREE.DoubleSide;
+    const horn = new THREE.Mesh(new THREE.CylinderGeometry(.95, .42, 1.1, 14, 1, true), hornMat);
+    horn.position.y = 1.5; head.add(horn);
+    const inner = new THREE.Mesh(new THREE.CylinderGeometry(.88, .38, 1.05, 14, 1, true), new THREE.MeshBasicMaterial({
+      color: 0xff8a3a, transparent: true, opacity: .35, blending: THREE.AdditiveBlending,
+      depthWrite: false, side: THREE.BackSide
+    }));
+    inner.position.y = 1.5; inner.userData.noShadow = true; head.add(inner); pulse.push(inner);
+    const rimG = new THREE.Mesh(new THREE.TorusGeometry(.95, .05, 8, 26), neon(A, 4));
+    rimG.rotation.x = Math.PI / 2; rimG.position.y = 2.05; rimG.userData.noShadow = true;
+    head.add(rimG); pulse.push(rimG);
+    const pilot = new THREE.Mesh(new THREE.ConeGeometry(.22, .7, 8), neon(0xffd06a, 4));
+    pilot.position.set(0, 1.0, 1.3); pilot.rotation.x = Math.PI / 2; pilot.userData.noShadow = true;
+    head.add(pilot); pulse.push(pilot);
+    const light = new THREE.PointLight(A, 30, 12, 2); light.position.y = 2.2; root.add(light); pulse.push(light);
+
+    const flame = cone(0xff8a2a);
+    return {
+      root, h: 4.2, spin, bob, pulse,
+      fire(g) {
+        const m = g.worldToLocal(V(0, 3.6, 0));
+        const a = rnd(0, 6.28);
+        fireCone(flame, m, V(m.x + Math.cos(a) * 6.5, .4, m.z + Math.sin(a) * 6.5), 1.5, .62);
+        burst(0xffb060, m, 24, 1.5);
+      }
+    };
+  },
+
+  /* 09 · ГРАВИТОННЫЙ ЯКОРЬ */
+  () => {
+    const A = ACCS[8], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '09'));
+    const dark = metal(0x171f2e, .92, .4), hull = metal(0x2f3a4d, .88, .34);
+
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const p = new THREE.Group(); p.position.set(Math.cos(a) * 1.25, .4, Math.sin(a) * 1.25);
+      p.rotation.y = -a; root.add(p);
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(.13, .3, 1.9, 6), dark);
+      leg.position.y = .95; leg.rotation.x = .12; p.add(leg);
+      const tip = new THREE.Mesh(new THREE.OctahedronGeometry(.22, 0), neon(A, 3.4));
+      tip.position.y = 1.95; tip.userData.noShadow = true; p.add(tip); pulse.push(tip);
+      for (let k = 0; k < 3; k++) {
+        const t = new THREE.Mesh(new THREE.TorusGeometry(.2, .03, 6, 14), hull);
+        t.rotation.x = Math.PI / 2; t.position.y = .6 + k * .45; p.add(t);
+      }
+    }
+    const core = new THREE.Mesh(new THREE.SphereGeometry(.62, 24, 18),
+      new THREE.MeshStandardMaterial({ color: 0x02030a, metalness: .4, roughness: .05 }));
+    core.position.y = 2.55; root.add(core);
+    const event = new THREE.Mesh(new THREE.SphereGeometry(.66, 20, 14), new THREE.MeshBasicMaterial({
+      color: 0x8fb4ff, transparent: true, opacity: .12, blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    event.position.y = 2.55; event.userData.noShadow = true; root.add(event);
+    bob.push({ o: core, amp: .08, s: .7, ph: 0 });
+    bob.push({ o: event, amp: .08, s: .7, ph: 0 });
+
+    const disk = new THREE.Group(); disk.position.y = 2.55; disk.rotation.x = 1.15; root.add(disk);
+    for (let i = 0; i < 3; i++) {
+      const t = new THREE.Mesh(new THREE.RingGeometry(1.0 + i * .28, 1.22 + i * .28, 64, 1),
+        new THREE.MeshBasicMaterial({
+          color: i === 1 ? 0xbcd0ff : 0x3f6bff, transparent: true, opacity: .5 - i * .1,
+          blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+        }));
+      t.userData.noShadow = true; disk.add(t);
+      spin.push({ o: t, ax: 'z', s: (i % 2 ? -1 : 1) * (.6 + i * .4) });
+    }
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const s = new THREE.Mesh(new THREE.OctahedronGeometry(.14, 0), neon(A, 3.4));
+      s.position.set(Math.cos(a) * 1.65, Math.sin(a) * 1.65, 0);
+      s.userData.noShadow = true; disk.add(s); pulse.push(s);
+    }
+    const light = new THREE.PointLight(A, 24, 12, 2); light.position.y = 2.5; root.add(light); pulse.push(light);
+
+    const N = 130, pp = new Float32Array(N * 3), seeds = [];
+    for (let i = 0; i < N; i++) {
+      seeds.push({ a: rnd(0, 6.28), r: rnd(2.2, 4.2), y: rnd(0, 3), sp: rnd(.5, 1.5) });
+    }
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute('position', new THREE.BufferAttribute(pp, 3));
+    const flow = new THREE.Points(pg, dotMat(0x7fa4ff, .15, .8));
+    flow.position.y = 2.4; flow.userData.noShadow = true; root.add(flow);
+
+    return {
+      root, h: 3.6, spin, bob, pulse,
+      extra: [() => {
+        const a = pg.attributes.position.array;
+        seeds.forEach((s, i) => {
+          s.r -= s.sp * .012;
+          if (s.r < .7) { s.r = 4.4; s.a = rnd(0, 6.28); s.y = rnd(0, 3); }
+          a[i * 3] = Math.cos(s.a) * s.r;
+          a[i * 3 + 1] = 2.4 + s.y - (s.r - 2) * .5;
+          a[i * 3 + 2] = Math.sin(s.a) * s.r;
+        });
+        pg.attributes.position.needsUpdate = true;
+      }],
+      fire() {
+        for (let k = 0; k < 3; k++) {
+          const geo = new THREE.TorusGeometry(1, .05, 8, 40);
+          const ring = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+            color: 0x6f9bff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false
+          }));
+          ring.rotation.x = -Math.PI / 2; ring.position.y = .2; ring.userData.noShadow = true;
+          root.add(ring);
+          liveFx.push({
+            t: 0, dur: .9, delay: k * .16, step(p) {
+              const q = p - this.delay;
+              if (q < 0) { ring.material.opacity = 0; return; }
+              ring.scale.setScalar(1 + q * 6);
+              ring.material.opacity = (1 - q) * .8;
+            },
+            done() { root.remove(ring); geo.dispose(); ring.material.dispose(); }
+          });
+        }
+        burst(A, V(0, 2.55, 0), 22, 1.2);
+      }
+    };
+  },
+
+  /* 10 · НАНИТНАЯ КУЗНЯ */
+  () => {
+    const A = ACCS[9], root = new THREE.Group();
+    const spin = [], bob = [], pulse = [];
+    root.add(hexBase(A, '10'));
+    const dark = metal(0x16241f, .92, .4), hull = metal(0x31473f, .86, .35);
+
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * Math.PI * 2;
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(.2, 1.7, .3), hull);
+      leg.position.set(Math.cos(a) * .85, 1.25, Math.sin(a) * .85);
+      leg.rotation.y = -a; root.add(leg);
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(.3, .36, .12, 6), dark);
+      pad.position.set(Math.cos(a) * 1.0, .5, Math.sin(a) * 1.0); root.add(pad);
+      const led = new THREE.Mesh(new THREE.BoxGeometry(.16, .04, .1), neon(A, 3));
+      led.position.set(Math.cos(a) * 1.0, .58, Math.sin(a) * 1.0); led.userData.noShadow = true;
+      root.add(led); pulse.push(led);
+    }
+    const coreG = new THREE.Group(); coreG.position.y = 2.5; root.add(coreG);
+    const hexc = new THREE.Mesh(new THREE.CylinderGeometry(.62, .62, .7, 6), dark);
+    hexc.rotation.y = Math.PI / 6; coreG.add(hexc);
+    const inner = new THREE.Mesh(new THREE.CylinderGeometry(.46, .46, .76, 6), neon(A, 2.6));
+    inner.rotation.y = Math.PI / 6; inner.userData.noShadow = true; coreG.add(inner);
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2;
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(.1, .8, .12), hull);
+      rib.position.set(Math.cos(a) * .64, 0, Math.sin(a) * .64); rib.rotation.y = -a;
+      coreG.add(rib);
+    }
+    bob.push({ o: coreG, amp: .12, s: .85, ph: 0 });
+    spin.push({ o: coreG, ax: 'y', s: .5 });
+    const ringTop = new THREE.Mesh(new THREE.TorusGeometry(.95, .04, 8, 6), neon(A, 3.2));
+    ringTop.rotation.x = Math.PI / 2; ringTop.rotation.z = Math.PI / 6;
+    ringTop.userData.noShadow = true; coreG.add(ringTop);
+    spin.push({ o: ringTop, ax: 'y', s: -1.2 });
+    const light = new THREE.PointLight(A, 26, 12, 2); light.position.y = 2.5; root.add(light); pulse.push(light);
+
+    const N = 90, pn = new Float32Array(N * 3), ns = [];
+    for (let i = 0; i < N; i++) ns.push({ a: rnd(0, 6.28), r: rnd(.9, 2.2), y: rnd(-1, 1), sp: rnd(.6, 2.2), ph: rnd(0, 6.28) });
+    const ng = new THREE.BufferGeometry();
+    ng.setAttribute('position', new THREE.BufferAttribute(pn, 3));
+    const swarm = new THREE.Points(ng, dotMat(0x7effd0, .16, .9));
+    swarm.position.y = 2.5; swarm.userData.noShadow = true; root.add(swarm);
+
+    return {
+      root, h: 3.4, spin, bob, pulse,
+      extra: [t => {
+        const a = ng.attributes.position.array;
+        ns.forEach((s, i) => {
+          s.a += s.sp * .01; s.ph += .04;
+          a[i * 3] = Math.cos(s.a) * s.r;
+          a[i * 3 + 1] = s.y + Math.sin(s.ph) * .35;
+          a[i * 3 + 2] = Math.sin(s.a) * s.r;
+        });
+        ng.attributes.position.needsUpdate = true;
+      }],
+      fire() {
+        for (let k = 0; k < 3; k++) {
+          const geo = new THREE.RingGeometry(.9, .96, 48);
+          const ring = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+            color: A, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false
+          }));
+          ring.rotation.x = -Math.PI / 2; ring.position.y = .18; ring.userData.noShadow = true;
+          root.add(ring);
+          liveFx.push({
+            t: 0, dur: 1.1, delay: k * .22, step(p) {
+              const q = p - this.delay;
+              if (q < 0) { ring.material.opacity = 0; return; }
+              ring.scale.setScalar(1 + q * 5.5);
+              ring.material.opacity = (1 - q) * .55;
+            },
+            done() { root.remove(ring); geo.dispose(); ring.material.dispose(); }
+          });
+        }
+        burst(A, V(0, 2.5, 0), 26, 1.3);
+      }
+    };
+  }
+];
+
+/* ===================== описания ===================== */
+const META = [
+  { name: 'ARC NODE', ru: 'Дуговой узел', role: 'Цепной разряд',
+    desc: 'Каскад высоковольтных конденсаторов. Разряд перескакивает между целями, затухая на 35% с каждым скачком. Бьёт одиночную цель, но выкашивает плотные группы.',
+    stats: { 'Урон': [.42, '42'], 'Цели': [.3, '3'], 'Скор.': [.85, '2.0/с'], 'Дальн.': [.28, '9'], 'Стоим.': [.5, '120'] },
+    note: 'Приоритет: скопления. Против боссов цепь рвётся — урон падает вдвое.' },
+  { name: 'PULSE CANNON', ru: 'Импульсная пушка', role: 'Пробитие',
+    desc: 'Линейный ускоритель на конденсаторных кольцах. Один импульс — одна очень тяжёлая противотанковая сила. Отдача смещает ствол, перезарядка долгая.',
+    stats: { 'Урон': [1, '260'], 'Цели': [.06, '1'], 'Скор.': [.14, '0.34/с'], 'Дальн.': [.95, '22'], 'Стоим.': [.86, '210'] },
+    note: 'Пробивает до 4 целей в линию. Бессмысленна по одиночным — бери, когда нужен фронт.' },
+  { name: 'CRYO VENT', ru: 'Крио-вентиль', role: 'Замедление',
+    desc: 'Открытый криогенератор выбрасывает хладагент в конус. Урон мизерный, но цель встаёт колом, а броня теряет эффективность на 40%.',
+    stats: { 'Урон': [.09, '9'], 'Цели': [.5, 'AoE'], 'Скор.': [.6, '1.2/с'], 'Дальн.': [.45, '11'], 'Стоим.': [.35, '95'] },
+    note: 'Замедление 55%, накапливается до 75%. Ставится первой — усиливает весь сектор.' },
+  { name: 'SWARM POD', ru: 'Рой-кассета', role: 'Залп по площади',
+    desc: 'Семь направляющих сот, стреляющих лесенкой с рандомным разбросом. Много слабых попаданий, которые складываются в плотном потоке.',
+    stats: { 'Урон': [.16, '16'], 'Цели': [.22, '3'], 'Скор.': [.95, '4.0/с'], 'Дальн.': [.38, '10'], 'Стоим.': [.55, '140'] },
+    note: 'Перекрывает огнём площадь, но не фокусируется. Хорош как дешёвый фронт.' },
+  { name: 'PLASMA CORE', ru: 'Плазменное ядро', role: 'Непрерывный луч',
+    desc: 'Удерживаемое ядро в трёх магнитных ловушках. Пучок непрерывный: максимальный DPS требует держать цель в фокусе.',
+    stats: { 'Урон': [.55, '110'], 'Цели': [.16, '2'], 'Скор.': [.5, '1.1/с'], 'Дальн.': [.66, '16'], 'Стоим.': [.72, '190'] },
+    note: 'Горит 1.8 с непрерывно, перезарядка 0.9 с. Луч сужается дальше 12.' },
+  { name: 'PRISM SPLITTER', ru: 'Призма-расщепитель', role: 'Мультивыстрел',
+    desc: 'Лазер накачивает парящую призму. Импульс выходит тремя лучами в развёрнутом секторе 140° — один выстрел, три независимые цели.',
+    stats: { 'Урон': [.36, '72/луч'], 'Цели': [.34, '3 луча'], 'Скор.': [.42, '0.9/с'], 'Дальн.': [.72, '17'], 'Стоим.': [.78, '230'] },
+    note: 'Луч на каждые 40° — между ними враги не получают урона. Враги идут плотно — идеально.' },
+  { name: 'TESLA SPIRE', ru: 'Грозовая шпиль', role: 'Цепь + оглушение',
+    desc: 'Двенадцать разрядов по ярусам. Каждый узел может быть целью, а попадание оглушает на 0.4 с — цель пропускает ход.',
+    stats: { 'Урон': [.5, '50'], 'Цели': [.48, '4'], 'Скор.': [.7, '1.6/с'], 'Дальн.': [.6, '14'], 'Стоим.': [.7, '200'] },
+    note: 'Оглушение не суммируется — второй разряд в окне 0.4 с слабее вдвое.' },
+  { name: 'MELTER', ru: 'Плавильня', role: 'Конус огня',
+    desc: 'Реактивная горелка. Непрерывная струя в секторе 70° с постоянным уроном от жара. Бьёт всё, что попало в конус, включая бронетехнику.',
+    stats: { 'Урон': [.48, '64/с'], 'Цели': [.4, 'AoE'], 'Скор.': [.9, '—'], 'Дальн.': [.3, '7.5'], 'Стоим.': [.5, '150'] },
+    note: 'Короткая дальность — ставь первым рядом. Горит, пока есть энергия.' },
+  { name: 'GRAVITON ANCHOR', ru: 'Гравитонный якорь', role: 'Притяжение',
+    desc: 'Сверхплотное ядро в поле удержания. Втягивает врагов в радиусе и замедляет на 35%, стягивая маршрут в одну точку.',
+    stats: { 'Урон': [.12, '12'], 'Цели': [.55, 'поле'], 'Скор.': [.3, '0.7/с'], 'Дальн.': [.5, '12'], 'Стоим.': [.65, '180'] },
+    note: 'Чистый контроль. Создаёт бутылочное горлышко — там бьют Pulse Cannon и Melter.' },
+  { name: 'NANITE FORGE', ru: 'Нанитная кузня', role: 'Поддержка',
+    desc: 'Рой нанитов обслуживает соседние башни: чинит их и добавляет 25% к скорострельности в радиусе 8. Сама не стреляет.',
+    stats: { 'Урон': [0, '—'], 'Цели': [0, '—'], 'Скор.': [.8, '+25%'], 'Дальн.': [.42, '8'], 'Стоим.': [.6, '160'] },
+    note: 'Аура складывается, но не умножается. Три кузни рядом = ×1.75 ко всей группе.' }
+];
+
+/* ===================== расстановка ===================== */
+const TOWERS = [];
+const SPACING = 8.2, ROWS = [-4.6, 4.6];
+META.forEach((meta, i) => {
+  const built = BUILDERS[i]();
+  const col = i % 5, row = Math.floor(i / 5);
+  built.root.position.set((col - 2) * SPACING, 0, ROWS[row]);
+  built.root.rotation.y = (col - 2) * .05 + row * .12;
+  built.root.userData.towerIndex = i;
+  addShadow(built.root);
+  scene.add(built.root);
+  TOWERS.push({
+    i, meta, ...built,
+    posV: new THREE.Vector3(built.root.position.x, built.h * .5 + .3, built.root.position.z)
+  });
+});
+
+/* подписи */
+const hud = document.getElementById('hud');
+TOWERS.forEach(t => {
+  const el = document.createElement('div');
+  el.className = 'tag';
+  el.style.color = hex(ACCS[t.i]);
+  el.innerHTML = `<span>${String(t.i + 1).padStart(2, '0')} · ${t.meta.name}</span><u>${t.meta.ru}</u>`;
+  hud.appendChild(el);
+  t.tag = el;
+});
+
+/* ===================== постобработка ===================== */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.38, 0.7, 0.7);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ===================== UI ===================== */
+const panel = document.getElementById('panel');
+const dock = document.getElementById('dock');
+let selected = -1, hovered = -1, userPicked = false;
+['pointerdown', 'keydown', 'wheel'].forEach(ev =>
+  addEventListener(ev, () => userPicked = true, { once: true, passive: true }));
+
+TOWERS.forEach(t => {
+  const b = document.createElement('button');
+  b.className = 'btn';
+  b.textContent = String(t.i + 1).padStart(2, '0') + ' ' + t.meta.name;
+  b.addEventListener('click', () => select(t.i));
+  b.addEventListener('mouseenter', () => hovered = t.i);
+  b.addEventListener('mouseleave', () => hovered = -1);
+  dock.appendChild(b);
+  t.btn = b;
+});
+
+const mkBtn = (label, on, cb) => {
+  const b = document.createElement('button');
+  b.className = 'btn' + (on ? ' act' : '');
+  b.textContent = label;
+  b.addEventListener('click', cb);
+  dock.appendChild(b);
+  return b;
+};
+let autoSpin = true, wire = false;
+const btnAll = mkBtn('Общий план', false, () => overview());
+const btnSpin = mkBtn('Автоповорот', true, () => { autoSpin = !autoSpin; btnSpin.classList.toggle('act', autoSpin); });
+const btnWire = mkBtn('Каркас', false, () => {
+  wire = !wire; btnWire.classList.toggle('act', wire);
+  scene.traverse(o => {
+    if (o.isMesh && o.material && o.material.isMeshStandardMaterial) o.material.wireframe = wire;
+  });
+});
+const btnFire = mkBtn('Залп', false, () => { if (selected >= 0) TOWERS[selected].fire(TOWERS[selected].root); });
+
+/* панель */
+function renderPanel(t) {
+  const m = t.meta, a = hex(ACCS[t.i]);
+  panel.querySelector('.p-idx').textContent = `БАШНЯ ${String(t.i + 1).padStart(2, '0')} / 10`;
+  panel.querySelector('.p-name').textContent = m.name;
+  panel.querySelector('.p-ru').textContent = m.ru;
+  const role = panel.querySelector('.p-role');
+  role.textContent = m.role; role.style.color = a;
+  panel.querySelector('.p-desc').textContent = m.desc;
+  const st = panel.querySelector('.stats');
+  st.innerHTML = '';
+  for (const [k, [v, label]] of Object.entries(m.stats)) {
+    const row = document.createElement('div');
+    row.className = 'st';
+    row.innerHTML = `<div class="k">${k}</div><div class="t"><i></i></div><div class="v">${label}</div>`;
+    st.appendChild(row);
+    const bar = row.querySelector('i');
+    requestAnimationFrame(() => { bar.style.background = a; bar.style.width = (v * 100) + '%'; });
+  }
+  const note = panel.querySelector('.p-note');
+  note.textContent = m.note; note.style.color = a;
+  panel.classList.add('on');
+}
+
+/* камера */
+let flight = null;
+function flyTo(pos, target) {
+  flight = { p0: camera.position.clone(), t0: controls.target.clone(), p1: pos, t1: target, k: 0 };
+  controls.enabled = false;
+}
+function select(i) {
+  selected = i;
+  TOWERS.forEach(t => t.btn.classList.toggle('act', t.i === i));
+  const t = TOWERS[i];
+  const dir = V(.62, .42, 1).normalize();
+  flyTo(t.posV.clone().addScaledVector(dir, 6.4 + t.h * 2.0), t.posV.clone());
+  renderPanel(t);
+}
+function overview() {
+  selected = -1;
+  panel.classList.remove('on');
+  TOWERS.forEach(t => t.btn.classList.remove('act'));
+  flyTo(V(0, 26, 34), V(0, 3, 0));
+}
+
+/* пикинг */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+let downX = 0, downY = 0;
+function pick(ev) {
+  ptr.x = (ev.clientX / innerWidth) * 2 - 1;
+  ptr.y = -(ev.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(ptr, camera);
+  const hits = ray.intersectObjects(TOWERS.map(t => t.root), true);
+  if (!hits.length) return -1;
+  let o = hits[0].object;
+  while (o && o.userData.towerIndex === undefined) o = o.parent;
+  return o ? o.userData.towerIndex : -1;
+}
+renderer.domElement.addEventListener('pointerdown', e => { downX = e.clientX; downY = e.clientY; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
+  const i = pick(e);
+  if (i >= 0) select(i); else overview();
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (e.buttons) return;
+  hovered = pick(e);
+  renderer.domElement.style.cursor = hovered >= 0 ? 'pointer' : 'default';
+});
+
+addEventListener('keydown', e => {
+  if (e.key >= '0' && e.key <= '9') {
+    const n = e.key === '0' ? 9 : (+e.key - 1);
+    select(n);
+  } else if (e.key === 'Escape') overview();
+  else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') select((selected + 1 + 10) % 10);
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') select((selected + 9) % 10);
+  else if (e.key === ' ') {
+    e.preventDefault();
+    if (selected >= 0) TOWERS[selected].fire(TOWERS[selected].root);
+  }
+});
+
+/* ===================== цикл ===================== */
+const clock = new THREE.Clock();
+let tAcc = 0;
+
+function frame() {
+  const dt = Math.min(clock.getDelta(), .05);
+  tAcc += dt;
+
+  if (flight) {
+    flight.k = Math.min(1, flight.k + dt * 1.9);
+    const e = ease(flight.k);
+    camera.position.lerpVectors(flight.p0, flight.p1, e);
+    controls.target.lerpVectors(flight.t0, flight.t1, e);
+    if (flight.k >= 1) { flight = null; controls.enabled = true; }
+  }
+  controls.autoRotate = autoSpin && !flight && selected < 0;
+  controls.update();
+
+  TOWERS.forEach(t => {
+    const near = selected < 0 || selected === t.i || hovered === t.i;
+    const s = selected === t.i ? 1 : (near ? 1 : .94);
+    t.root.scale.lerp(V(s, s, s), .12);
+    const mul = selected === t.i ? 2.1 : 1;
+    t.spin.forEach(sp => sp.o.rotation[sp.ax] += sp.s * dt * mul);
+    t.bob.forEach(b => {
+      b.o.userData.baseY ??= b.o.position.y;
+      b.o.position.y = b.o.userData.baseY + Math.sin(tAcc * b.s + b.ph) * b.amp;
+    });
+    t.pulse.forEach((p, k) => {
+      if (p.isLight) {
+        p.userData.base ??= p.intensity;
+        p.intensity = p.userData.base * (.82 + Math.sin(tAcc * 3 + k) * .18);
+      } else if (p.material?.emissive) {
+        p.userData.baseE ??= p.material.emissiveIntensity;
+        p.material.emissiveIntensity = p.userData.baseE * (.75 + Math.sin(tAcc * 3.4 + k * 1.7) * .35);
+      }
+    });
+    t.extra?.forEach(f => f(tAcc));
+    t.tick?.(t.root, dt, tAcc);
+  });
+
+  for (let i = liveFx.length - 1; i >= 0; i--) {
+    const f = liveFx[i];
+    f.t += dt;
+    f.step(Math.min(1, f.t / f.dur), dt);
+    if (f.t >= f.dur) { f.done(); liveFx.splice(i, 1); }
+  }
+
+  const dp = dust.geometry.attributes.position.array;
+  for (let i = 0; i < dustN; i++) {
+    dp[i * 3 + 1] += dt * .12;
+    if (dp[i * 3 + 1] > 18) dp[i * 3 + 1] = 0;
+  }
+  dust.geometry.attributes.position.needsUpdate = true;
+
+  const v = new THREE.Vector3();
+  TOWERS.forEach(t => {
+    const show = selected === t.i || hovered === t.i;
+    t.tag.classList.toggle('on', show);
+    if (!show) return;
+    v.copy(t.posV); v.y = t.h + 1.1; v.project(camera);
+    t.tag.style.left = ((v.x * .5 + .5) * innerWidth) + 'px';
+    t.tag.style.top = ((-.5 * v.y + .5) * innerHeight) + 'px';
+  });
+
+  composer.render();
+  requestAnimationFrame(frame);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  bloom.setSize(innerWidth, innerHeight);
+});
+
+/* автопоказ: до первого клика крутимся по башням, потом стрельба выбранной */
+setInterval(() => { if (selected >= 0 && !document.hidden) TOWERS[selected].fire(TOWERS[selected].root); }, 2600);
+let tourT = 3, tourIdx = 0;
+setInterval(() => {
+  if (userPicked || document.hidden) return;
+  if (selected >= 0) {
+    if (--tourT <= 0) { overview(); tourT = 3; }
+  } else if (--tourT <= 0) {
+    select(tourIdx++ % 10); tourT = 4;
+  }
+}, 1000);
+
+overview();
+requestAnimationFrame(() => {
+  document.getElementById('load').classList.add('off');
+  setTimeout(() => document.getElementById('load')?.remove(), 700);
+  frame();
+});
+</script>
+</body>
+</html>

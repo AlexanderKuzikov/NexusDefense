@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NEXUS DEFENSE — ландшафт</title>
+<style>
+  :root{--bg:#05070c;--ink:#cfe6ff;--dim:#5d7590;--line:rgba(120,190,255,.16);
+    --panel:rgba(8,14,22,.82);--accent:#35e0ff}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);overflow:hidden}
+  body{font-family:ui-monospace,"SF Mono",Consolas,"Roboto Mono",monospace;
+    color:var(--ink);-webkit-font-smoothing:antialiased;user-select:none;cursor:default}
+  canvas{display:block}
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+  #hud>*{pointer-events:auto}
+  .vig{position:fixed;inset:0;pointer-events:none;z-index:2;
+    background:radial-gradient(ellipse 130% 100% at 50% 45%,transparent 30%,rgba(0,0,0,.7) 100%)}
+
+  header{position:absolute;top:20px;left:22px}
+  header h1{margin:0;font-size:15px;letter-spacing:.42em;font-weight:600;color:#eaf6ff;
+    text-shadow:0 0 18px rgba(53,224,255,.4)}
+  header .sub{margin-top:7px;font-size:10.5px;letter-spacing:.2em;color:var(--dim)}
+  header .bar{width:210px;height:2px;margin-top:11px;
+    background:linear-gradient(90deg,var(--accent),rgba(53,224,255,0));opacity:.75}
+
+  #panel{position:absolute;top:20px;right:20px;width:300px;background:var(--panel);
+    border:1px solid var(--line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%);
+    opacity:0;transform:translateX(14px);transition:opacity .3s,transform .3s;
+    max-height:calc(100% - 110px);overflow:auto;scrollbar-width:thin}
+  #panel.on{opacity:1;transform:none}
+  #panel::-webkit-scrollbar{width:5px}
+  #panel::-webkit-scrollbar-thumb{background:rgba(120,190,255,.25)}
+  .p-top{padding:14px 16px 12px;border-bottom:1px solid var(--line)}
+  .p-idx{font-size:10px;letter-spacing:.3em;color:var(--dim)}
+  .p-name{margin-top:5px;font-size:16px;letter-spacing:.12em;font-weight:600;color:#fff}
+  .p-body{padding:13px 16px 16px}
+  .p-desc{font-size:11.5px;line-height:1.7;color:#a9c6de}
+  .swatch{width:100%;height:52px;margin:0 0 13px;border:1px solid rgba(255,255,255,.12)}
+
+  #bio{position:absolute;left:22px;top:92px;bottom:92px;width:210px;overflow-y:auto;
+    display:flex;flex-direction:column;gap:3px;scrollbar-width:thin;padding-right:5px}
+  #bio::-webkit-scrollbar{width:4px}
+  #bio::-webkit-scrollbar-thumb{background:rgba(120,190,255,.22)}
+  .brow{display:grid;grid-template-columns:14px 1fr auto;align-items:center;gap:8px;padding:5px 7px;
+    background:rgba(10,16,24,.5);border:1px solid transparent;border-left:2px solid currentColor;
+    cursor:pointer;transition:.14s;flex-shrink:0}
+  .brow:hover{background:rgba(30,44,60,.7);transform:translateX(2px)}
+  .brow.act{background:rgba(40,58,78,.85);border-color:currentColor}
+  .brow .dot{width:11px;height:11px;border:1px solid rgba(255,255,255,.3)}
+  .brow .nm{font-size:10px;letter-spacing:.06em;color:#dceaf7}
+  .brow .pc{font-size:9px;color:var(--dim)}
+
+  #dock{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);display:flex;gap:8px;
+    align-items:center;flex-wrap:wrap;justify-content:center;max-width:min(820px,calc(100% - 40px))}
+  .btn{font:inherit;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink);
+    background:rgba(10,18,28,.72);border:1px solid var(--line);padding:8px 13px;cursor:pointer;
+    transition:.18s;backdrop-filter:blur(10px)}
+  .btn:hover{background:rgba(53,224,255,.12);border-color:rgba(53,224,255,.55);color:#fff}
+  .btn.act{background:rgba(53,224,255,.18);border-color:rgba(53,224,255,.7);color:#fff;
+    box-shadow:inset 0 0 18px rgba(53,224,255,.18)}
+  .hint{position:absolute;right:22px;bottom:22px;font-size:9.5px;letter-spacing:.13em;
+    color:var(--dim);line-height:1.9;text-align:right}
+  .hint b{color:#a7c8e2;font-weight:600}
+  #stat{position:absolute;left:22px;bottom:22px;font-size:9.5px;letter-spacing:.14em;color:var(--dim)}
+  #stat b{color:#7fe8ff;font-weight:600}
+
+  #load{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:var(--bg);transition:opacity .6s}
+  #load.off{opacity:0;pointer-events:none}
+  #load div{font-size:11px;letter-spacing:.4em;color:var(--dim);text-align:center}
+  #load .ln{width:200px;height:1px;margin:14px auto 0;
+    background:linear-gradient(90deg,transparent,#35e0ff,transparent);animation:sweep 1.1s ease-in-out infinite}
+  @keyframes sweep{0%,100%{opacity:.2;transform:scaleX(.3)}50%{opacity:1;transform:scaleX(1)}}
+  #load .st{margin-top:14px;font-size:9px;letter-spacing:.2em;color:#3f5a72}
+  #fail{position:fixed;inset:0;z-index:50;display:none;place-items:center;background:var(--bg);
+    text-align:center;font-size:12px;line-height:2;color:#ff8f8f;padding:30px}
+  @media (max-width:900px){#bio{width:160px}#panel{width:250px}}
+  @media (max-width:700px){#bio{display:none}}
+</style>
+</head>
+<body>
+<div id="fail"><div>WebGL недоступен.<br>Включи аппаратное ускорение.</div></div>
+<div id="load"><div>ГЕНЕРАЦИЯ МИРА<div class="ln"></div><div class="st" id="loadst">инициализация</div></div></div>
+<div class="vig"></div>
+
+<div id="hud">
+  <header>
+    <h1>Nexus Defense</h1>
+    <div class="sub">Ландшафт · процедурный мир · <span id="seedtxt">seed —</span></div>
+    <div class="bar"></div>
+  </header>
+  <div id="bio"></div>
+  <aside id="panel">
+    <div class="p-top"><div class="p-idx">— // —</div><div class="p-name">—</div></div>
+    <div class="p-body"><div class="swatch"></div><div class="p-desc"></div></div>
+  </aside>
+  <div id="stat">Разрешение: <b id="res">—</b> · Триангуляций: <b id="tris">—</b> · FPS: <b id="fps">—</b></div>
+  <div class="hint">
+    <b>ЛКМ</b> — выбрать биом &nbsp;·&nbsp; <b>мышь</b> — орбита / зум<br>
+    <b>R</b> — новый мир &nbsp;·&nbsp; <b>F</b> — облёт &nbsp;·&nbsp; <b>1…0</b> — точки обзора
+  </div>
+  <div id="dock"></div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { generateWorld, buildTerrainMesh, buildHeightTexture, buildOwnershipTexture,
+         biomeAt, heightAt, findBiomeCenter, BIOME, BIOME_INFO, WORLD,
+         WATER_LEVEL, TOXIC_LEVEL, LAVA_LEVEL } from './src/terrain/world.js';
+import { makeWater, makeLava, makeToxic } from './src/terrain/liquids.js';
+import { scatterProps, buildRoadGlow } from './src/terrain/props.js';
+import { hex } from './src/core.js';
+
+const loadst = document.getElementById('loadst');
+const tick = s => new Promise(r => { loadst.textContent = s; requestAnimationFrame(() => setTimeout(r, 0)); });
+
+/* ---------- рендерер ---------- */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (e) {
+  document.getElementById('fail').style.display = 'grid';
+  document.getElementById('load').classList.add('off');
+  throw e;
+}
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.02;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0e18);
+scene.fog = new THREE.FogExp2(0x0a0e18, 0.006);
+
+const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.5, 700);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = .08;
+controls.minDistance = 8;
+controls.maxDistance = 300;
+controls.maxPolarAngle = Math.PI * .49;
+controls.target.set(0, 4, 0);
+
+/* ---------- окружение и свет ---------- */
+function env() {
+  const s = new THREE.Scene();
+  s.add(new THREE.Mesh(new THREE.SphereGeometry(20, 24, 16), new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    vertexShader: 'varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+    fragmentShader: `varying vec3 vP; void main(){
+      float h = normalize(vP).y*.5+.5;
+      vec3 sky = mix(vec3(0.04,0.055,0.085), vec3(0.07,0.15,0.26), pow(h,1.7));
+      /* тёплое зарево у горизонта — отражённая лава, но сдержанно */
+      float horizon = 1.0 - abs(normalize(vP).y);
+      sky += vec3(0.14,0.045,0.012) * pow(horizon, 8.0);
+      gl_FragColor = vec4(sky,1.);
+    }`
+  })));
+  const p = (c, pos, w, h) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: c }));
+    m.position.set(...pos); m.lookAt(0, 0, 0); s.add(m);
+  };
+  p(0x2f5a8a, [-10, 6, 0], 10, 6);
+  p(0x8a3a10, [10, 4, 0], 10, 5);
+  p(0x1a4a52, [0, 12, 0], 12, 12);
+  p(0x3a4a20, [0, -8, 8], 16, 8);
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(s, .03).texture;
+  pm.dispose();
+}
+env();
+
+scene.add(new THREE.HemisphereLight(0x5a86b8, 0x14100a, .7));
+const sun = new THREE.DirectionalLight(0xffe8c8, 1.7);
+sun.position.set(60, 90, 40);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+const sc = sun.shadow.camera;
+sc.left = -110; sc.right = 110; sc.top = 110; sc.bottom = -110; sc.near = 10; sc.far = 260;
+sun.shadow.bias = -.0008;
+scene.add(sun);
+/* холодная подсветка с теневой стороны */
+const rim = new THREE.DirectionalLight(0x4a7ad0, .5);
+rim.position.set(-50, 30, -40);
+scene.add(rim);
+
+/* ---------- мир ---------- */
+let world, terrain, water, lava, toxic, props, roadGlow, heightTex, ownTex, lavaLights;
+const liquidMats = [];
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .5, .75, .72);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* Полное освобождение GPU-ресурсов сгенерированного мира.
+   Без этого «Новый мир» копит геометрии, материалы и текстуры: сцену
+   мы снимали со сцены, но буферы оставались живыми. */
+function disposeWorld() {
+  const targets = [terrain, water, lava, toxic, props, roadGlow, lavaLights];
+  for (const o of targets) {
+    if (!o) continue;
+    scene.remove(o);
+    o.traverse?.(n => {
+      n.geometry?.dispose();
+      const m = n.material;
+      if (Array.isArray(m)) m.forEach(x => x.dispose());
+      else if (m) {
+        /* текстуры живут в uniform'ах шейдерных материалов */
+        for (const k in m.uniforms) {
+          const v = m.uniforms[k]?.value;
+          if (v && v.isTexture) v.dispose();
+        }
+        m.dispose();
+      }
+    });
+  }
+  heightTex?.dispose();
+  ownTex?.dispose();
+  lavaLights = null;
+}
+
+async function build(seed) {
+  disposeWorld();
+  document.getElementById('load').classList.remove('off');
+  document.getElementById('loadst').textContent = 'рельеф';
+  await tick('рельеф');
+  world = generateWorld(seed);
+  document.getElementById('seedtxt').textContent = 'seed ' + seed;
+
+  await tick('меш поверхности');
+  const t = buildTerrainMesh(world);
+  terrain = t.mesh;
+  scene.add(terrain);
+
+  await tick('жидкости');
+  heightTex = buildHeightTexture(world);
+  ownTex = buildOwnershipTexture(world);
+  water = makeWater(heightTex, ownTex, world.levels.water);
+  lava = makeLava(heightTex, ownTex, world.levels.lava);
+  toxic = makeToxic(heightTex, ownTex, world.levels.toxic);
+  liquidMats.length = 0;
+  liquidMats.push(water.material, lava.material, toxic.material);
+  scene.add(water, lava, toxic);
+
+  await tick('растительность');
+  props = scatterProps(world, heightTex);
+  scene.add(props);
+
+  await tick('дорога');
+  roadGlow = buildRoadGlow(world.path);
+  scene.add(roadGlow);
+
+  /* огни над лавой и пеплом — расплав должен освещать окрестности */
+  lavaLights = new THREE.Group();
+  for (const b of [BIOME.LAVA, BIOME.TOXIC, BIOME.ASH]) {
+    const c = findBiomeCenter(world, b, 26);
+    if (!c) continue;
+    const col = b === BIOME.LAVA ? 0xff5a20 : b === BIOME.TOXIC ? 0x8ce020 : 0xff8030;
+    const l = new THREE.PointLight(col, b === BIOME.ASH ? 6 : 11, 55, 2);
+    l.position.set(c.x, (b === BIOME.LAVA ? world.levels.lava : c.y) + 9, c.z);
+    lavaLights.add(l);
+  }
+  scene.add(lavaLights);
+
+  buildViews();
+
+  const tris = (terrain.geometry.index ? terrain.geometry.index.count : terrain.geometry.attributes.position.count) / 3;
+  document.getElementById('res').textContent = world.RES + '×' + world.RES;
+  document.getElementById('tris').textContent = Math.round(tris / 1000) + 'k';
+
+  buildBiomeList();
+  document.getElementById('load').classList.add('off');
+}
+
+/* ---------- список биомов ---------- */
+const bioEl = document.getElementById('bio');
+const rows = [];
+function buildBiomeList() {
+  bioEl.innerHTML = '';
+  rows.length = 0;
+  const counts = {};
+  for (let i = 0; i < world.B.length; i++) counts[world.B[i]] = (counts[world.B[i]] || 0) + 1;
+  const total = world.B.length;
+  for (const [b, info] of Object.entries(BIOME_INFO)) {
+    const pct = ((counts[b] || 0) / total * 100);
+    if (!counts[b]) continue;
+    const el = document.createElement('div');
+    el.className = 'brow';
+    el.style.color = hex(info.color);
+    el.innerHTML = `<span class="dot" style="background:${hex(info.color)}"></span>
+      <span class="nm">${info.name}</span><span class="pc">${pct.toFixed(1)}%</span>`;
+    el.dataset.b = b;
+    el.addEventListener('click', () => focusBiome(+b, el));
+    bioEl.appendChild(el);
+    rows.push(el);
+  }
+}
+
+const panel = document.getElementById('panel');
+let selBiome = -1;
+function focusBiome(b, el) {
+  selBiome = b;
+  rows.forEach(r => r.classList.remove('act'));
+  el.classList.add('act');
+  const info = BIOME_INFO[b];
+  panel.querySelector('.p-idx').textContent = 'БИОМ // ' + Object.keys(BIOME_INFO).findIndex(k => +k === b) + ' из ' + Object.keys(BIOME_INFO).length;
+  panel.querySelector('.p-name').textContent = info.name;
+  panel.querySelector('.p-desc').textContent = info.desc;
+  panel.querySelector('.swatch').style.background = `linear-gradient(135deg, ${hex(info.color)}, ${hex(info.color)}22)`;
+  panel.classList.add('on');
+  /* подсветка биома на карте: снимаем выделение с прочих */
+  terrain.material.emissive = new THREE.Color(0x000000);
+  emissiveTarget = info.color;
+}
+
+/* подсветка выбранного биома через эмиссию — простая, но читаемая */
+let emissiveTarget = null;
+const hlColor = new THREE.Color();
+
+/* ---------- док ---------- */
+const dock = document.getElementById('dock');
+const mkBtn = (label, on, cb) => {
+  const b = document.createElement('button');
+  b.className = 'btn' + (on ? ' act' : '');
+  b.textContent = label;
+  b.addEventListener('click', cb);
+  dock.appendChild(b);
+  return b;
+};
+let wire = false;
+mkBtn('Новый мир', false, () => build((Math.random() * 1e9) | 0));
+const btnWire = mkBtn('Каркас', false, () => {
+  wire = !wire; btnWire.classList.toggle('act', wire);
+  scene.traverse(o => { if (o.isMesh && o.material?.isMeshStandardMaterial) o.material.wireframe = wire; });
+});
+let showLiquids = true;
+const btnLiq = mkBtn('Жидкости', true, () => {
+  showLiquids = !showLiquids; btnLiq.classList.toggle('act', showLiquids);
+  water.visible = lava.visible = toxic.visible = showLiquids;
+});
+/* точки обзора строим по найденным кластерам биомов */
+let VIEWS = [];
+const viewsEl = document.createElement('div');
+viewsEl.style.display = 'contents';
+dock.appendChild(viewsEl);
+
+let flight = null;
+function flyTo(p, t) {
+  flight = {
+    p0: camera.position.clone(), t0: controls.target.clone(),
+    p1: new THREE.Vector3(...p), t1: new THREE.Vector3(...t), k: 0
+  };
+  controls.enabled = false;
+}
+
+/* Смотрим на кластер сбоку и сверху. Высота камеры не привязана к высоте
+   самого кластера: лавовый жёлоб уходит на -25, и камера по нему
+   уезжала под рельеф. Отсюда и нижний заполнитель. */
+function viewOn(c, dist = 46, lift = 0.55) {
+  const camY = Math.max(c.y + dist * lift, dist * 0.55, 22);
+  return {
+    p: [c.x + dist * 0.42, camY, c.z + dist * 0.8],
+    t: [c.x, c.y, c.z]
+  };
+}
+
+function buildViews() {
+  viewsEl.innerHTML = '';
+  const mk = (name, v) => {
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.textContent = name;
+    b.addEventListener('click', () => flyTo(v.p, v.t));
+    viewsEl.appendChild(b);
+    return v;
+  };
+  VIEWS = [];
+  VIEWS.push(mk('1 общий', { p: [0, 62, 132], t: [0, 4, 0] }));
+
+  const lava = findBiomeCenter(world, BIOME.LAVA, 26);
+  const toxic = findBiomeCenter(world, BIOME.TOXIC, 26);
+  const water = findBiomeCenter(world, BIOME.WATER, 30);
+  const forest = findBiomeCenter(world, BIOME.FOREST, 26);
+  const snow = findBiomeCenter(world, BIOME.SNOW, 22);
+
+  if (lava) VIEWS.push(mk('2 лава', viewOn(lava, 44)));
+  if (toxic) VIEWS.push(mk('3 яд', viewOn(toxic, 40)));
+  if (water) VIEWS.push(mk('4 вода', viewOn(water, 52)));
+  if (forest) VIEWS.push(mk('5 лес', viewOn(forest, 38, 0.4)));
+  if (snow) VIEWS.push(mk('6 горы', viewOn(snow, 52, 0.5)));
+  VIEWS.push(mk('7 сверху', { p: [0, 195, 0.1], t: [0, 0, 0] }));
+}
+mkBtn('Погода: ясно', true, () => { /* заглушка под смену освещения */ });
+
+/* ---------- пикинг биома ---------- */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+let downX = 0, downY = 0;
+
+/* выбор биома кликом по земле */
+function pickBiome(ev) {
+  ptr.x = (ev.clientX / innerWidth) * 2 - 1;
+  ptr.y = -(ev.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(ptr, camera);
+  const hit = ray.intersectObject(terrain)[0];
+  return hit ? biomeAt(world, hit.point.x, hit.point.z) : -1;
+}
+
+renderer.domElement.addEventListener('pointerdown', e => { downX = e.clientX; downY = e.clientY; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
+  const b = pickBiome(e);
+  const row = rows.find(r => +r.dataset.b === b);
+  if (row) row.click();
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  renderer.domElement.style.cursor = pickBiome(e) >= 0 ? 'help' : 'default';
+});
+
+addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R' || e.key === 'к') build((Math.random() * 1e9) | 0);
+  else if (e.key === 'f' || e.key === 'F' || e.key === 'а') flyTo(VIEWS[0].p, VIEWS[0].t);
+  else if (e.key >= '1' && e.key <= '9') {
+    const v = VIEWS[+e.key - 1];
+    if (v) flyTo(v.p, v.t);
+  }
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  bloom.setSize(innerWidth, innerHeight);
+});
+
+/* ---------- цикл ---------- */
+const clock = new THREE.Clock();
+let tAcc = 0, fpsT = 0, frames = 0;
+
+function frame() {
+  const dt = Math.min(clock.getDelta(), .05);
+  tAcc += dt;
+
+  if (flight) {
+    flight.k = Math.min(1, flight.k + dt * 1.1);
+    const e = flight.k < .5 ? 2 * flight.k * flight.k : 1 - Math.pow(-2 * flight.k + 2, 2) / 2;
+    camera.position.lerpVectors(flight.p0, flight.p1, e);
+    controls.target.lerpVectors(flight.t0, flight.t1, e);
+    if (flight.k >= 1) { flight = null; controls.enabled = true; }
+  }
+  controls.update();
+
+  /* жидкости */
+  for (const m of liquidMats) if (m.uniforms?.uTime) m.uniforms.uTime.value = tAcc;
+
+  /* кристаллы пульсируют, угли дышат */
+  if (props?.userData.crystalMat) {
+    props.userData.crystalMat.emissiveIntensity = 1.2 + Math.sin(tAcc * 1.2) * .4;
+  }
+
+  /* подсветка выбранного биома */
+  if (emissiveTarget) {
+    hlColor.lerp(new THREE.Color(emissiveTarget), .05);
+    terrain.material.emissive.copy(hlColor).multiplyScalar(.18);
+  } else if (terrain) {
+    terrain.material.emissive.setHex(0x000000);
+  }
+
+  /* огонь: пульс у эмбера */
+  if (props?.userData.emberMat) {
+    props.userData.emberMat.opacity = .7 + Math.sin(tAcc * 3) * .2;
+  }
+  /* огонь и дым горящего леса — вся анимация в шейдере */
+  if (props?.userData.fireMat) props.userData.fireMat.uniforms.uTime.value = tAcc;
+  if (props?.userData.smokeMat) props.userData.smokeMat.uniforms.uTime.value = tAcc;
+
+  composer.render();
+
+  frames++; fpsT += dt;
+  if (fpsT > 1) {
+    document.getElementById('fps').textContent = frames;
+    frames = 0; fpsT = 0;
+  }
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(async () => {
+  const q = new URLSearchParams(location.search).get('seed');
+  await build(q ? (parseInt(q, 10) >>> 0) : 20260928);
+  /* камера ставится после build: точки обзора строятся из данных мира */
+  camera.position.set(...VIEWS[0].p);
+  controls.target.set(...VIEWS[0].t);
+  frame();
+});
+</script>
+</body>
+</html>

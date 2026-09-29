@@ -1,0 +1,22 @@
+# зависимости и сборка
+node_modules/
+dist/
+build/
+.vite/
+
+# секреты и локальное окружение
+.env
+.env.local
+*.key
+*.pem
+credentials*
+
+# инструменты разработки
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+
+# артефакты браузерной автоматизации
+.playwright-mcp/
+*.log

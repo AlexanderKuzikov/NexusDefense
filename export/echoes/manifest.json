@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "pulse-spire",
+      "file": "pulse-spire.glb",
+      "bytes": 452644,
+      "contentHash": "sha256:cf50c35271a596ddb262186e184060c36801e18f41e55074f1cfc67aa73b6933",
+      "triangles": 3576,
+      "emissiveNode": "crystal"
+    },
+    {
+      "id": "grove-lens",
+      "file": "grove-lens.glb",
+      "bytes": 144656,
+      "contentHash": "sha256:5527ed71a98945240339a62f1e0d57d7995ebc58c8e8169cf63ffc08353ce964",
+      "triangles": 1132,
+      "emissiveNode": "crystal"
+    },
+    {
+      "id": "frost-relay",
+      "file": "frost-relay.glb",
+      "bytes": 101856,
+      "contentHash": "sha256:fa1802cae2d4fcb0ecda2487b464f8ba7737bb7e1961ea920db571bdc4648103",
+      "triangles": 792,
+      "emissiveNode": "crystal"
+    }
+  ]
+}

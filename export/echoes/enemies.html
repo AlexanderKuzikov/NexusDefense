@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nexus Defense — выгрузка существ Echoes</title>
+<style>
+  :root{ --bg:#05070c; --ink:#cfe6ff; --dim:#5d7590; --line:rgba(120,190,255,.16) }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);overflow:hidden}
+  body{font-family:ui-monospace,"SF Mono",Consolas,"Roboto Mono",monospace;color:var(--ink);
+    -webkit-font-smoothing:antialiased;user-select:none}
+  canvas{display:block}
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+  header{position:absolute;top:18px;left:20px}
+  header h1{margin:0;font-size:14px;letter-spacing:.4em;font-weight:600;color:#eaf6ff}
+  header .sub{margin-top:6px;font-size:10px;letter-spacing:.2em;color:var(--dim)}
+  #row{position:absolute;left:20px;right:20px;bottom:16px;display:flex;gap:8px;flex-wrap:wrap}
+  .tag{padding:6px 10px;font-size:10px;letter-spacing:.14em;border:1px solid var(--line);
+    background:rgba(8,14,22,.7);color:var(--dim)}
+  .tag b{color:#a7c8e2;font-weight:600}
+  #dock{position:absolute;right:20px;bottom:64px;display:flex;gap:8px;flex-wrap:wrap}
+  .btn{font:inherit;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink);
+    background:rgba(10,18,28,.72);border:1px solid var(--line);padding:8px 12px;cursor:pointer}
+  .btn:hover{background:rgba(255,90,60,.12);border-color:rgba(255,90,60,.55);color:#fff}
+  .btn.act{background:rgba(255,90,60,.18);border-color:rgba(255,90,60,.7);color:#fff}
+  #stat{position:absolute;left:20px;top:64px;font-size:10px;line-height:1.9;color:var(--dim)}
+  #stat b{color:#a7c8e2;font-weight:600}
+</style>
+</head>
+<body>
+<div id="hud">
+  <header>
+    <h1>ВЫГРУЗКА СУЩЕСТВ</h1>
+    <div class="sub">семь моделей из export/echoes · как их видит штаб Echoes</div>
+  </header>
+  <div id="stat">загрузка…</div>
+  <div id="row"></div>
+  <div id="dock"></div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { buildScene, V } from '../../src/core.js';
+
+// Витрина выгрузки: те же материалы и свет, что на остальных страницах
+// проекта, чтобы судить о тоне можно было на одном и том же фоне.
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+document.body.appendChild(renderer.domElement);
+
+const { scene } = buildScene(renderer);
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, .05, 400);
+camera.position.set(0, 6.2, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.minDistance = 1.2;
+controls.maxDistance = 60;
+controls.maxPolarAngle = Math.PI * .49;
+controls.target.set(0, 0.5, 0);
+
+const manifest = await (await fetch('./manifest.json')).json();
+const enemies = manifest.models.filter((m) => !['pulse-spire', 'grove-lens', 'frost-relay'].includes(m.id));
+const loader = new GLTFLoader();
+// Стартовый вид — почти в профиль и на расстоянии, при котором в кадр влезает
+// вся полоса: судить о силуэте можно только оттуда, сверху видна крышка.
+// Дистанция посчитана от полукадра: нужная ширина 2 × (N-1)/2 × SPACING плюс
+// поле, делённое на tg(fov/2) × aspect.
+const SPACING = 2.2;
+const stat = document.getElementById('stat');
+const row = document.getElementById('row');
+const dock = document.getElementById('dock');
+
+const frameAll = () => {
+  const halfWidth = ((enemies.length - 1) / 2) * SPACING + 1.1;
+  const vFov = (camera.fov * Math.PI) / 180;
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+  return halfWidth / Math.tan(hFov / 2);
+};
+
+camera.position.set(0, 0.9, frameAll());
+controls.target.set(0, 0.32, 0);
+
+let scaleMode = true;
+const units = [];
+
+for (let i = 0; i < enemies.length; i += 1) {
+  const entry = enemies[i];
+  const holder = new THREE.Group();
+  holder.position.set((i - (enemies.length - 1) / 2) * SPACING, 0, 0);
+  scene.add(holder);
+
+  // Подсветка только на выбранном и втрое слабее ключевого света: при полной
+  // силе ближний лам выбеливает корпус, и тон вершин перестаёт читаться — а
+  // судить о палитре после этого нельзя.
+  const glow = new THREE.PointLight(0xffffff, 0, 3, 2);
+  scene.add(glow);
+
+  const gltf = await loader.loadAsync(`./${entry.file}`);
+  const model = gltf.scene;
+  const accent = model.getObjectByName(entry.emissiveNode);
+  if (!accent) throw new Error(`${entry.id}: no node named ${entry.emissiveNode}`);
+  const body = model.getObjectByName('body');
+  // Материалов в файле нет, и клиент создаёт их сам: здесь тот же стандартный
+  // материал. Тон акцента берётся из вершин, а эмиссия — его собственный тон:
+  // белая эмиссия поверх тона выбеливает акцент в белое пятно, и на приёмке
+  // существо не совпадёт с тем, что лежит в файле.
+  //
+  // Интенсивность низкая: цвет акцента уже лежит в вершинах, то есть витрина
+  // показывает материал, а не «как я бы подсветил».
+  const vertexHue = (mesh) => {
+    const attr = mesh.geometry.attributes.color;
+    const c = new THREE.Color(attr.getX(0), attr.getY(0), attr.getZ(0));
+    return c.convertLinearToSRGB();
+  };
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+    o.material = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: o === body ? 0.78 : 0.5,
+      metalness: 0.12,
+    });
+  });
+  if (accent.isMesh) {
+    accent.material = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.5, metalness: 0.05,
+      emissive: vertexHue(accent), emissiveIntensity: 0.35,
+    });
+  }
+  // Высота подвеса из манифеста: без неё парящие уезжают в землю.
+  holder.position.y = entry.hoverY ?? 0;
+  holder.add(model);
+
+  units.push({ entry, holder, glow, accent, model });
+
+  const el = document.createElement('div');
+  el.className = 'tag';
+  el.innerHTML = `<b>${entry.id}</b> ${entry.hoverY === undefined ? '' : `· hoverY ${entry.hoverY}`}`;
+  row.appendChild(el);
+}
+
+const mkBtn = (label, on, cb) => {
+  const b = document.createElement('button');
+  b.className = 'btn' + (on ? ' act' : '');
+  b.textContent = label;
+  b.addEventListener('click', cb);
+  dock.appendChild(b);
+  return b;
+};
+mkBtn('Реальный масштаб', true, (e) => {
+  scaleMode = !scaleMode;
+  e.target.classList.toggle('act', scaleMode);
+});
+
+let selected = -1;
+let sideView = false;
+
+// Фокус по клику: камера встаёт к выбранному существу тем же способом, что
+// бестиарий, — сбоку-сбоку-снизу, откуда силуэт читается целиком.
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  const hit = units.find((u) => {
+    let o = e.object;
+    while (o && o !== u.holder) o = o.parent;
+    return o === u.holder;
+  });
+  selected = units.indexOf(hit);
+  if (selected >= 0) flyTo(units[selected]);
+});
+row.addEventListener('click', (e) => {
+  const index = [...row.children].indexOf(e.target.closest('.tag'));
+  if (index < 0) return;
+  selected = index;
+  flyTo(units[index]);
+});
+
+let flight = null;
+function flyTo(unit) {
+  const dist = 1.9 + 0.6;
+  const dir = sideView ? V(0, 0.12, 1) : V(.42, 0.34, 1).normalize();
+  flight = {
+    p0: camera.position.clone(), t0: controls.target.clone(),
+    p1: unit.holder.position.clone().addScaledVector(dir, dist),
+    t1: unit.holder.position.clone().add(V(0, 0.28, 0)),
+    k: 0,
+  };
+  controls.enabled = false;
+}
+
+mkBtn('Сбоку', false, (e) => {
+  sideView = !sideView;
+  e.target.classList.toggle('act', sideView);
+  if (selected >= 0) flyTo(units[selected]);
+});
+mkBtn('Показать всех', false, () => {
+  selected = -1;
+  flight = {
+    p0: camera.position.clone(), t0: controls.target.clone(),
+    p1: V(0, 0.9, frameAll()), t1: V(0, 0.32, 0), k: 0,
+  };
+  controls.enabled = false;
+});
+
+const totalTris = enemies.reduce((sum, e) => sum + e.triangles, 0);
+stat.innerHTML = `моделей <b>${enemies.length}</b> · треугольников <b>${totalTris}</b> · ` +
+  `на волне 16 существ ≈ <b>${(totalTris / enemies.length * 16).toFixed(0)}</b> треугольников<br>` +
+  `узлов на существо <b>2</b> (body, core) · вызовов отрисовки на волне <b>32</b>`;
+
+let t = 0;
+const clock = new THREE.Clock();
+const ease = (k) => (k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+function frame() {
+  const dt = Math.min(clock.getDelta(), .05);
+  t += dt;
+  if (flight) {
+    flight.k = Math.min(1, flight.k + dt * 2.2);
+    const e = ease(flight.k);
+    camera.position.lerpVectors(flight.p0, flight.p1, e);
+    controls.target.lerpVectors(flight.t0, flight.t1, e);
+    if (flight.k >= 1) { flight = null; controls.enabled = true; }
+  }
+  controls.update();
+  units.forEach((u, i) => {
+    const focus = selected === i;
+    if (u.accent.isMesh) {
+      u.accent.material.emissiveIntensity = (focus ? 0.75 : 0.35) * (0.85 + Math.sin(t * 3 + i) * 0.15);
+    }
+    u.glow.position.set(u.holder.position.x + 0.9, u.holder.position.y + 1.1, 1.2);
+    u.glow.intensity = focus ? 4 : 0;
+    const bob = u.entry.hoverY === undefined ? 0 : Math.sin(t * 1.6 + i) * 0.02;
+    u.holder.position.y = (u.entry.hoverY ?? 0) + (scaleMode ? bob : 0);
+    if (scaleMode) u.holder.scale.setScalar(1);
+    else u.holder.scale.setScalar(3);
+  });
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+frame();
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

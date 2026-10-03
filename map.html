@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEXUS DEFENSE — компоновщик карты</title>
+<link rel="icon" href="data:,">
+<style>
+  :root{
+    --bg:#0a0e15; --pan:#111823; --line:#1e2a3a;
+    --txt:#c8d6e5; --dim:#6b7d92; --acc:#36d0ff; --warn:#ff8a3d;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:13px/1.5 "Segoe UI", system-ui, sans-serif; overflow:hidden;
+  }
+  header{position:fixed; top:0; left:0; right:0; padding:12px 18px; z-index:5; pointer-events:none}
+  h1{font-size:17px; letter-spacing:.3em; font-weight:600}
+  .sub{color:var(--dim); font-size:11px; margin-top:2px}
+
+  #stage{position:fixed; inset:0; display:flex; gap:10px; padding:64px 14px 76px}
+  .pane{flex:1 1 0; min-width:0; position:relative; border:1px solid var(--line); border-radius:6px; overflow:hidden}
+  .pane > .tag{position:absolute; top:8px; left:10px; font-size:10px; letter-spacing:.18em; color:var(--dim); z-index:2}
+  #left canvas{display:block; width:100%; height:100%}
+  #right{background:#fff; display:flex; align-items:center; justify-content:center}
+  #right img{width:100%; height:100%; object-fit:contain}
+  #right .none{color:#666; font-size:12px; text-align:center; padding:0 24px}
+
+  #dock{position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:6; display:flex; gap:7px; align-items:center}
+  button{
+    background:var(--pan); color:var(--txt); border:1px solid var(--line);
+    padding:6px 12px; border-radius:5px; cursor:pointer; font:inherit; font-size:12px;
+  }
+  button:hover{background:#1a2534; border-color:#2c3d52}
+  #stat{position:fixed; bottom:18px; left:18px; z-index:6; color:var(--dim); font-size:11px; line-height:1.7}
+  #table{
+    position:fixed; right:14px; top:64px; bottom:76px; width:330px; z-index:6;
+    background:var(--pan); border:1px solid var(--line); border-radius:6px;
+    overflow:auto; padding:10px 12px; display:none;
+  }
+  #table.on{display:block}
+  #table h3{font-size:11px; letter-spacing:.18em; color:var(--dim); font-weight:500; margin-bottom:6px}
+  #table table{width:100%; border-collapse:collapse; font-size:11px}
+  #table td{padding:2px 4px; border-top:1px solid #16202c; white-space:nowrap}
+  #table td.num{text-align:right; color:var(--dim)}
+  .road{color:#9aa6b2}
+  .grass{color:var(--warn)}
+  .other{color:#ff6b6b}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>NEXUS DEFENSE</h1>
+  <div class="sub">компоновщик карты · сеть дороги владельца, 20 отрезков · <span id="head">—</span></div>
+</header>
+
+<div id="stage">
+  <div class="pane" id="left"><span class="tag">СОБРАННАЯ СЕТЬ</span></div>
+  <div class="pane" id="right">
+    <span class="tag" style="color:#888">ОБРАЗЕЦ ВЛАДЕЛЬЦА</span>
+    <div class="none" id="refNone">Файл образца лежит в соседнем проекте.<br>Поднять сервер на корень <code>D:\GitHub</code> и открыть страницу с <code>?ref=1</code>.</div>
+    <img id="refImg" alt="" style="display:none">
+  </div>
+</div>
+
+<div id="table"><h3>ПРОБЫ: СЕРЕДИНА КАЖДОГО ОТРЕЗКА</h3><div id="rows"></div></div>
+
+<div id="dock">
+  <button id="btnVerify">Проверить 20 проб</button>
+  <button id="btnPanel">Таблица проб</button>
+</div>
+<div id="stat">—</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+               "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { composeMap } from './src/composer/composer.js';
+import { OWNER_NETWORK, OWNER_PLATE, OWNER_BASE } from './src/composer/network.js';
+import { buildMapScene } from './src/composer/scene.js';
+import { BIOME } from './src/terrain/world.js';
+
+/* =============================================================
+   ВИТРИНА КОМПОНОВЩИКА
+   Слева карта, собранная инструментом из деталей набора и сети дороги.
+   Справа — файл владельца `Map-and-Router.png`, если сервер поднят на
+   корень D:\GitHub и страница открыта с ?ref=1: иначе сравнивать нечем,
+   а две картинки в разных окнах сравнивают на глаз, а не формой.
+   ============================================================= */
+
+const map = composeMap({
+  id: 'owner-network',
+  plate: OWNER_PLATE,
+  network: OWNER_NETWORK,
+  base: OWNER_BASE
+});
+
+const el = document.getElementById('left');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance',
+                                          preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+el.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0e15);
+
+/* Камера строго сверху и ортогональная: сравнение с образцом идёт по
+   форме, а перспектива сверху растягивает дальнюю половину плиты и
+   сравнение перестаёт быть сравнением. Ось z смотрит вниз на экране,
+   как и на файле (0040: «ось z растёт в ту же сторону, что и вниз»). */
+const MARGIN = 1.06;
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400);
+camera.position.set(0, 200, 0);
+camera.up.set(0, 0, 1);
+camera.lookAt(0, 0, 0);
+
+scene.add(new THREE.HemisphereLight(0x8fb4e0, 0x2a2418, 3.5));
+const key = new THREE.DirectionalLight(0xfff2dc, 7.8);
+key.position.set(28, 44, 20);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x8fb4e0, 1.5);
+fill.position.set(-30, 20, -24);
+scene.add(fill);
+
+const built = buildMapScene(map, { label: false, flipNormals: true });
+scene.add(built.group);
+
+function resize() {
+  const w = el.clientWidth, h = el.clientHeight;
+  renderer.setSize(w, h, false);
+  const pad = (map.grid.WORLD / 2) * MARGIN;
+  /* Полутолщина фрустума по обеим осям не меньше pad: кадр узкий по
+     высоте, и при MARGIN 1.06 плита 96 обрезалась на 1.14 единицы с
+     верху и снизу — то есть ровно настолько, чтобы не попасть в кадр. */
+  const halfH = Math.max(pad, pad * h / w);
+  camera.left = -halfH * w / h; camera.right = halfH * w / h;
+  camera.top = halfH; camera.bottom = -halfH;
+  camera.updateProjectionMatrix();
+  /* Ортокамера строго сверху умеет либо правильный X, либо правильный Z:
+     up = (0,0,1) даёт z вниз, как на файле, но x зеркальный, и смена up
+     переключает, а не исправляет. Нужно отражение по x, а поворот камеры
+     на 180° меняет обе оси сразу. Поэтому домножаем первую строку
+     проекции — это и есть flip вида по X. */
+  camera.projectionMatrix.elements[0] *= -1;
+  renderer.render(scene, camera);
+}
+
+/* ---------- фрустум, который страница реально отдала ----------
+   Проба переводится в пиксели через projectionMatrix и
+   matrixWorldInverse того же рендера, а не через пересчёт от руки:
+   иначе «как считали» и «как считали бы в отчёте» разойдутся. */
+function publishedFrustum() {
+  return {
+    left: camera.left, right: camera.right,
+    top: camera.top, bottom: camera.bottom,
+    near: camera.near, far: camera.far,
+    width: renderer.domElement.width,
+    height: renderer.domElement.height,
+    projection: Array.from(camera.projectionMatrix.elements),
+    viewInverse: Array.from(camera.matrixWorldInverse.elements),
+    position: camera.position.toArray(),
+    up: camera.up.toArray()
+  };
+}
+
+const _v = new THREE.Vector3();
+
+/* Читает цвет под мировой точкой.
+
+   Проба рендерится в ОТДЕЛЬНЫЙ таргет того же размера, что и кадр, той
+   же камерой, и читается по координате из матриц этой камеры. Чтение из
+   буфера кадра (`readPixels` из default framebuffer) отброшено осознанно:
+   пробы расходились с вершинными цветами в 3 из 20 точек — луч по тому
+   же NDC попадал в нужную вершину, а пиксель читался чужой. Кадр при
+   этом оставался верным, то есть расходилось именно чтение. */
+const probeTarget = new THREE.WebGLRenderTarget(619, 578, {
+  type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter
+});
+
+function sample(x, z) {
+  if (probeTarget.width !== renderer.domElement.width ||
+      probeTarget.height !== renderer.domElement.height) {
+    probeTarget.setSize(renderer.domElement.width, renderer.domElement.height);
+  }
+  renderer.setRenderTarget(probeTarget);
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  renderer.render(scene, camera);
+
+  _v.set(x, map.road.target, z).project(camera);
+  const bw = renderer.domElement.width, bh = renderer.domElement.height;
+  /* X отражается дважды: вид перевёрнут flip'ом в проекции, и обратное
+     отражение возвращает координату в пространство сцены. Без этого
+     проба попадает в зеркальную точку — вершинный цвет и луч по тому же
+     NDC верны, а пиксель нет. */
+  const px = Math.round((-_v.x * 0.5 + 0.5) * bw);
+  const py = Math.round((_v.y * 0.5 + 0.5) * bh);
+
+  const buf = new Float32Array(4);
+  renderer.readRenderTargetPixels(probeTarget, px, bh - py, 1, 1, buf);
+
+  /* Буфер таргета линейный и без тонмаппинга: применяем ACES и кодирование
+     в sRGB сами, ровно так же, как это делает шейдер кадра. С 8-битным
+     буфером яркая земля приходила синей — переполнение G не выжигалось
+     в белое, а уходило в синий канал. */
+  const exposure = renderer.toneMappingExposure;
+  const rgb = [0, 1, 2].map(k => {
+    let c = buf[k] * exposure;
+    c = (c * (2.51 * c + 0.03)) / (c * (2.43 * c + 0.59) + 0.14);
+    c = c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+    return Math.round(Math.max(0, Math.min(1, c)) * 255);
+  });
+  return { px, py, rgb, kind: kindOf(rgb) };
+}
+
+/* Различение, на котором стоит приёмка: трава зелёная, полотно серое.
+   Порог 12 из 255 — втрое меньше измеренной разницы каналов. */
+function kindOf([r, g, b]) {
+  if (g > r + 12 && g > b + 12) return 'трава';
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  return mx - mn <= 14 ? 'дорога' : 'прочее';
+}
+
+/* ---------- проба всех двадцати отрезков ---------- */
+function verify() {
+  return map.road.probes.map(p => {
+    const s = sample(p.x, p.z);
+    return {
+      i: p.index + 1,
+      axis: p.seg.along,
+      at: p.seg.at,
+      x: p.x, z: p.z,
+      px: s.px, py: s.py,
+      rgb: s.rgb,
+      kind: s.kind
+    };
+  });
+}
+
+/* ---------- интерфейс ---------- */
+const rows = document.getElementById('rows');
+const table = document.getElementById('table');
+const stat = document.getElementById('stat');
+
+function show(res) {
+  const bad = res.filter(r => r.kind !== 'дорога');
+  rows.innerHTML = '<table>' + res.map(r =>
+    `<tr><td class="num">${r.i}</td><td>${r.axis} ${r.at}</td>` +
+    `<td class="num">${r.x}, ${r.z}</td><td class="num">${r.px}, ${r.py}</td>` +
+    `<td class="num">${r.rgb ? r.rgb.join(',') : '—'}</td>` +
+    `<td class="${r.kind === 'дорога' ? 'road' : r.kind === 'трава' ? 'grass' : 'other'}">${r.kind}</td></tr>`
+  ).join('') + '</table>';
+  stat.innerHTML = `проб ${res.length} · серых ${res.length - bad.length} · ` +
+    (bad.length ? `<span class="grass">не серых ${bad.length}</span>` : 'все дают полотно');
+  return bad;
+}
+
+document.getElementById('btnVerify').addEventListener('click', () => show(verify()));
+document.getElementById('btnPanel').addEventListener('click', () => table.classList.toggle('on'));
+
+/* ---------- образец владельца ---------- */
+if (new URLSearchParams(location.search).has('ref')) {
+  const img = document.getElementById('refImg');
+  img.addEventListener('load', () => {
+    img.style.display = 'block';
+    document.getElementById('refNone').style.display = 'none';
+  });
+  img.src = '../Echoes-of-Burbenog/docs/Map-and-Router.png';
+}
+
+addEventListener('resize', resize);
+resize();
+show(verify());
+
+/* Шов для приёмки: отсюда читаются и фрустум, и цвета проб. */
+window.__MAP__ = {
+  spec: { plate: OWNER_PLATE, base: OWNER_BASE, halfWidth: OWNER_NETWORK.halfWidth },
+  entries: map.road.entries,
+  lines: map.road.lines,
+  pavedCells: map.road.paved,
+  grid: { res: map.grid.RES, step: map.grid.STEP, world: map.grid.WORLD },
+  probes: map.road.probes.map(p => ({ index: p.index, x: p.x, z: p.z })),
+  frustum: publishedFrustum,
+  verify,
+  sample,
+  refreshFrustum: () => { camera.updateMatrixWorld(true); return publishedFrustum(); },
+biomeAt: (x, z) => map.B[map.grid.idx(Math.round((x + map.grid.half) / map.grid.STEP),
+                                     Math.round((z + map.grid.half) / map.grid.STEP))],
+  distAt: (x, z) => map.road.dist[map.grid.idx(Math.round((x + map.grid.half) / map.grid.STEP),
+                                               Math.round((z + map.grid.half) / map.grid.STEP))],
+  heightAt: (x, z) => map.h[map.grid.idx(Math.round((x + map.grid.half) / map.grid.STEP),
+                                          Math.round((z + map.grid.half) / map.grid.STEP))],
+  /* куда точка попадает на кадре: нужно, чтобы ориентацию можно было
+     сверить с образцом, а не угадывать по картинке */
+  pixelAt: (x, z) => {
+    const v = new THREE.Vector3(x, map.road.target, z).project(camera);
+    return { px: Math.round((-v.x * 0.5 + 0.5) * renderer.domElement.width),
+             py: Math.round((v.y * 0.5 + 0.5) * renderer.domElement.height),
+             w: renderer.domElement.width, h: renderer.domElement.height };
+  },
+info: () => ({ render: { ...renderer.info.render }, mem: { ...renderer.info.memory } }),
+  redraw: () => { renderer.setRenderTarget(null); renderer.render(scene, camera); return { ...renderer.info.render }; },
+  BIOME
+};
+
+document.getElementById('head').textContent =
+  `${map.road.segments.length} отрезков · ${map.road.entries.length} входа · полотно ${map.road.paved} клеток`;
+</script>
+</body>
+</html>

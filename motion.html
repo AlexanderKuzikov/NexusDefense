@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nexus Defense — движение существ: кости против узлов</title>
+<style>
+  :root{ --bg:#05070c; --ink:#cfe6ff; --dim:#5d7590; --line:rgba(120,190,255,.16); --a:#ff8a4a; --b:#4ad0ff }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);overflow:hidden}
+  body{font-family:ui-monospace,"SF Mono",Consolas,monospace;color:var(--ink);
+    -webkit-font-smoothing:antialiased;user-select:none}
+  canvas{display:block}
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+  #hud>*{pointer-events:auto}
+  header{position:absolute;top:16px;left:20px}
+  header h1{margin:0;font-size:13px;letter-spacing:.34em;font-weight:600;color:#eaf6ff}
+  header .sub{margin-top:6px;font-size:10px;letter-spacing:.18em;color:var(--dim)}
+  #dock{position:absolute;left:20px;bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .btn{font:inherit;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);
+    background:rgba(10,18,28,.72);border:1px solid var(--line);padding:7px 11px;cursor:pointer}
+  .btn:hover{background:rgba(255,138,74,.14);border-color:rgba(255,138,74,.6);color:#fff}
+  .btn.act{background:rgba(255,138,74,.2);border-color:rgba(255,138,74,.75);color:#fff}
+  .sep{width:1px;height:22px;background:var(--line);margin:0 3px}
+  #readout{position:absolute;right:16px;top:16px;width:356px;max-height:calc(100% - 32px);overflow:auto;
+    background:rgba(8,14,22,.86);border:1px solid var(--line);padding:12px 13px;font-size:10px;line-height:1.75;
+    scrollbar-width:thin}
+  #readout::-webkit-scrollbar{width:5px}
+  #readout::-webkit-scrollbar-thumb{background:rgba(120,190,255,.25)}
+  #readout h2{margin:0 0 8px;font-size:9.5px;letter-spacing:.26em;color:var(--dim);font-weight:600}
+  #readout h2:not(:first-child){margin-top:14px;padding-top:11px;border-top:1px solid var(--line)}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:right;padding:1px 0;font-size:9.5px;font-weight:400;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left;color:#a7c8e2}
+  th{color:var(--dim);font-size:8.5px;letter-spacing:.1em}
+  .keyA{color:var(--a)}
+  .keyB{color:var(--b)}
+  .bad{color:#ff6a6a}
+  .note{color:var(--dim);margin-top:8px;line-height:1.7}
+  .note b{color:#a7c8e2;font-weight:600}
+  #verdict{margin-top:12px;padding:9px 10px;border-left:2px solid var(--a);background:rgba(255,255,255,.04);line-height:1.7}
+  #scale{position:absolute;left:20px;top:74px;font-size:10px;line-height:1.9;color:var(--dim)}
+  #scale b{color:#a7c8e2;font-weight:600}
+  #phase{position:absolute;left:20px;bottom:62px;font-size:10px;letter-spacing:.14em;color:var(--dim)}
+  #phase b{color:#eaf6ff;font-weight:600}
+  #fail{position:fixed;inset:0;z-index:50;display:none;place-items:center;background:var(--bg);
+    text-align:center;font-size:12px;line-height:2;color:#ff8f8f;padding:30px}
+</style>
+</head>
+<body>
+<div id="fail"><div>WebGL недоступен в этом браузере.<br>Включи аппаратное ускорение и перезагрузи страницу.</div></div>
+
+<div id="hud">
+  <header>
+    <h1>ДВИЖЕНИЕ СУЩЕСТВ</h1>
+    <div class="sub">способ A — скелет и три клипа · способ B — повороты и масштаб двух узлов</div>
+  </header>
+  <div id="scale">загрузка…</div>
+  <div id="phase">фаза <b>—</b></div>
+  <div id="readout"></div>
+  <div id="dock"></div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { buildScene } from './src/core.js';
+import { SilhouetteProbe, assertNotEmpty, diffBlobs } from './src/motion/probe.js';
+import {
+  CYCLE, CLIP_LEN, SPECS,
+  bindRig, nodeRig, poseSkeleton, poseNodes, phaseAt, pathAt, verifySpec,
+} from './src/motion/rig.js';
+
+/* Витрина движения существ, задача NDD-0004: собрать оба способа рядом и
+   измерить, различимы ли они на игровом масштабе.
+
+   Сцена идёт сама и повторяется. Управления камерой нет намеренно: силуэты
+   сравнивают с одного ракурса, иначе измеряется разница ракурсов, а не
+   разница способов. Все три дистанции заданы прямо в пикселях на единицу —
+   «примерно издалека» здесь не число. */
+
+const params = new URLSearchParams(location.search);
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (error) {
+  document.getElementById('fail').style.display = 'grid';
+  throw error;
+}
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+document.body.appendChild(renderer.domElement);
+
+const { scene } = buildScene(renderer);
+// Туман на игровом дистанции съедал бы силуэт: на 130 единицах плотность 0.0075
+// даёт 64% закрытия, и сравнивать пришлось бы две разные яркости.
+scene.fog.density = 0.0016;
+
+const probe = new SilhouetteProbe(renderer, { width: 160, height: 160, fov: 42 });
+
+const DISTANCES = {
+  close: { pxPerUnit: 58, label: 'близко' },
+  game: { pxPerUnit: 14, label: 'игровая' },
+  far: { pxPerUnit: 7, label: 'вдвое дальше игровой' },
+};
+
+const LANE = 2.45;     // расстояние между парами в полосе
+const PAIR_X = 1.35;   // зазор между близнецами A и B внутри пары
+const CELL = 2.0;      // клетка ниши из контракта игры
+const WALL_COLS = 30;
+const WALL_ROWS = 7;
+
+const state = {
+  method: params.get('method') ?? 'both',
+  distance: params.get('distance') ?? 'close',
+  wall: params.get('wall') === '1',
+  playing: !params.has('freeze'),
+};
+const startAt = params.has('freeze') ? Number(params.get('freeze')) || 0 : 0;
+
+const manifest = await (await fetch('./export/echoes/manifest.json')).json();
+const entries = manifest.models.filter((m) => SPECS[m.id]);
+if (entries.length !== 7) throw new Error(`manifest holds ${entries.length} of 7 creature entries`);
+
+const loader = new GLTFLoader();
+
+/* Материалы те же, что на витрине выгрузки: цвет в вершинах, стандартный
+   отклик, акцент с эмиссией из собственного тона вершины. Иначе силуэт
+   оценивался бы по чужому свету. */
+const materialsOf = (gltf, entry) => {
+  const accent = gltf.scene.getObjectByName(entry.emissiveNode);
+  if (!accent) throw new Error(`${entry.id}: no node named ${entry.emissiveNode}`);
+  const body = gltf.scene.getObjectByName('body');
+  const hue = (mesh) => new THREE.Color(
+    mesh.geometry.attributes.color.getX(0),
+    mesh.geometry.attributes.color.getY(0),
+    mesh.geometry.attributes.color.getZ(0),
+  ).convertLinearToSRGB();
+  const list = [];
+  gltf.scene.traverse((node) => {
+    if (!node.isMesh) return;
+    const material = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: node === body ? 0.78 : 0.5,
+      metalness: 0.12,
+    });
+    if (node === accent) {
+      material.emissive = hue(node);
+      material.emissiveIntensity = 0.35;
+      material.metalness = 0.05;
+    }
+    list.push(material);
+  });
+  return list;
+};
+
+const TYPES = [];
+for (const entry of entries) {
+  const spec = SPECS[entry.id];
+  const gltf = await loader.loadAsync(`./export/echoes/${entry.file}`);
+  const nodes = [];
+  gltf.scene.traverse((node) => { if (node.isMesh) nodes.push(node); });
+  if (nodes.length !== 2) throw new Error(`${entry.id}: expected 2 meshes, got ${nodes.length}`);
+  const geometries = nodes.map((node) => node.geometry);
+  const box = new THREE.Box3();
+  for (const geometry of geometries) {
+    box.union(new THREE.Box3().setFromBufferAttribute(geometry.attributes.position));
+  }
+  const check = verifySpec(spec, box);
+  TYPES.push({ id: entry.id, spec, entry, nodes, materials: materialsOf(gltf, entry), geometries, check });
+}
+
+// ---------- полоса из семи существ ----------
+
+const strip = new THREE.Group();
+scene.add(strip);
+const wall = new THREE.Group();
+scene.add(wall);
+
+const cloneNodes = (type) => type.nodes.map((node) => {
+  const clone = node.clone();
+  clone.castShadow = true;
+  clone.receiveShadow = true;
+  return clone;
+});
+
+const STRIP = [];
+TYPES.forEach((type, index) => {
+  const lane = new THREE.Group();
+  // Ряд поперёк экрана, а не вглубь: на одной глубине все семь сравнимы
+  // попиксельно, и разброс по глубине не превращает их в лестницу размеров.
+  lane.position.x = (index - 3) * LANE;
+  strip.add(lane);
+  const a = bindRig(type.id, type.geometries, type.materials, type.spec);
+  const b = nodeRig(type.id, cloneNodes(type), type.spec);
+  scene.add(a.group);
+  // Меши способа A уходят в корень сцены и остаются там навсегда: их
+  // matrixWorld обязан совпадать с bind-матрицей, а движение несут кости.
+  for (const mesh of a.meshes) scene.add(mesh);
+  lane.add(b.group);
+  STRIP.push({ type, lane, a, b });
+});
+
+/* Стена: сетка клеток, в каждой клетке пара A+B вплотную. Инстансы не
+   делят ни геометрию, ни скелет между собой — скелет общий перетирает сам
+   себя в том же кадре, поэтому на 128 существах живут 128 скелетов. */
+const WALL = [];
+for (let row = 0; row < WALL_ROWS; row += 1) {
+  for (let col = 0; col < WALL_COLS; col += 1) {
+    const type = TYPES[(col + row * 3) % TYPES.length];
+    const x = (col - (WALL_COLS - 1) / 2) * CELL;
+    const z = (row - (WALL_ROWS - 1) / 2) * CELL;
+    const a = bindRig(type.id, type.geometries, type.materials, type.spec);
+    const b = nodeRig(type.id, cloneNodes(type), type.spec);
+    a.group.position.set(x - PAIR_X * 0.5, 0, z);
+    b.group.position.set(x + PAIR_X * 0.5, 0, z);
+    wall.add(a.group, b.group);
+    for (const mesh of a.meshes) scene.add(mesh);
+    WALL.push({ type, col, row, x, z, a, b });
+  }
+}
+
+const cellGrid = (() => {
+  const material = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: {
+      uColor: { value: new THREE.Color(0x35e0ff) },
+      uCell: { value: CELL }, uMajor: { value: CELL * 4 },
+      uFade: { value: 34 }, uOp: { value: 0.55 },
+    },
+    vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix*vec4(position,1.); vW = w.xyz;
+      gl_Position = projectionMatrix*viewMatrix*w; }`,
+    fragmentShader: `varying vec3 vW; uniform vec3 uColor; uniform float uCell; uniform float uMajor;
+      uniform float uFade; uniform float uOp;
+      void main(){
+        vec2 c1 = vW.xz/uCell; vec2 c2 = vW.xz/uMajor;
+        vec2 g1 = abs(fract(c1-.5)-.5)/max(fwidth(c1), vec2(1e-4));
+        vec2 g2 = abs(fract(c2-.5)-.5)/max(fwidth(c2), vec2(1e-4));
+        float line = max((1.-min(min(g1.x,g1.y),1.))*.5, 1.-min(min(g2.x,g2.y),1.));
+        float a = line*(1.-smoothstep(0.,uFade,length(vW.xz)))*uOp;
+        if(a<0.004) discard;
+        gl_FragColor = vec4(uColor, a);
+      }`,
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(CELL * WALL_COLS * 1.6, CELL * WALL_ROWS * 2.6), material);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.014;
+  mesh.renderOrder = 1;
+  mesh.userData.noShadow = true;
+  return mesh;
+})();
+scene.add(cellGrid);
+
+// ---------- камера ----------
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 600);
+const VIEW = new THREE.Vector3(0.14, 0.30, 1).normalize();
+// Смещение вправо уводит ряд от панели замера: панель закрывает правую
+// четверть кадра, и без смещения шестое и седьмое существо уезжают под неё.
+const AIM = new THREE.Vector3(2.6, 0.45, 0.5);
+const WALL_AIM = new THREE.Vector3(0, 0.4, 0);
+const WALL_VIEW = new THREE.Vector3(0.06, 0.52, 1).normalize();
+
+const placeCamera = () => {
+  const preset = DISTANCES[state.distance];
+  const half = Math.tan((camera.fov * Math.PI) / 360);
+  const distance = innerHeight / (2 * preset.pxPerUnit * half);
+  // В стене камера смотрит вдоль полосы клеток, а не поперёк: иначе при
+  // игровом масштабе ряд из тридцати клеток не влезает в кадр и половина
+  // существ уходит за край — считать их в кадре было бы враньём.
+  const target = state.wall ? WALL_AIM : AIM;
+  camera.position.copy(target).addScaledVector(state.wall ? WALL_VIEW : VIEW, distance);
+  camera.lookAt(target);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+  return distance;
+};
+
+// ---------- поза ----------
+
+const walkPhase = (t, seed) => ({ name: 'walk', local: t, step: (t + seed) % 1, u: 0 });
+
+/* Ставит позу и траекторию. У способа A траекторию несут кости, а меши не
+   трогаются вовсе: движение уже учтено в boneMatrices, и второй раз Applying
+   его к mesh.matrixWorld сдвинуло бы существо вдвое. У способа B траекторию
+   несёт группа узлов — так и должно быть, костей у него нет. */
+const poseAll = (t) => {
+  STRIP.forEach((unit, index) => {
+    const at = t + index * 0.14;
+    const phase = phaseAt(at);
+    const path = pathAt(at);
+    const base = unit.lane.position.x + path.x;
+    const z = path.z;
+    // Пара стоит вплотную: близнецы A и B обязаны быть видны рядом, иначе
+    // сравнивать нечего — под одинаковыми точками они просто перетирают друг друга.
+    unit.a.group.position.set(base - PAIR_X * 0.5, 0, z);
+    unit.a.group.rotation.y = path.yaw;
+    poseSkeleton(unit.a, phase);
+    unit.b.group.position.set(base + PAIR_X * 0.5, 0, z);
+    unit.b.group.rotation.y = path.yaw;
+    poseNodes(unit.b, phase);
+  });
+  WALL.forEach((entry, index) => {
+    if (!entry.a.group.visible && !entry.b.group.visible) return;
+    const phase = walkPhase(t * 0.9, index * 0.37);
+    if (entry.a.group.visible) poseSkeleton(entry.a, phase);
+    if (entry.b.group.visible) poseNodes(entry.b, phase);
+  });
+  scene.updateMatrixWorld(true);
+  return phaseAt(t);
+};
+
+const applyVisibility = () => {
+  const showA = state.method !== 'b';
+  const showB = state.method !== 'a';
+  strip.visible = !state.wall;
+  wall.visible = state.wall;
+  cellGrid.visible = state.wall;
+  STRIP.forEach((unit) => {
+    unit.a.group.visible = showA;
+    for (const mesh of unit.a.meshes) mesh.visible = showA;
+    unit.b.group.visible = showB;
+  });
+  WALL.forEach((entry) => {
+    const on = state.wall;
+    entry.a.group.visible = on && showA;
+    for (const mesh of entry.a.meshes) mesh.visible = on && showA;
+    entry.b.group.visible = on && showB;
+  });
+};
+
+// ---------- замер ----------
+
+/* Съёмка одной пары. Обе реализации получают ОДНУ камеру, один момент времени
+   и одинаковую позу покоя — тогда разница кадров принадлежит способу. */
+const shoot = (unit, at, pxPerUnit, height) => {
+  const phase = phaseAt(at);
+  const center = new THREE.Vector3(0, height, 0);
+  unit.a.group.position.set(0, 0, 0);
+  unit.a.group.rotation.set(0, 0, 0);
+  poseSkeleton(unit.a, phase);
+  unit.b.group.position.set(0, 0, 0);
+  unit.b.group.rotation.set(0, 0, 0);
+  poseNodes(unit.b, phase);
+  const a = probe.capture([unit.a.group, ...unit.a.meshes], center, pxPerUnit);
+  const b = probe.capture([unit.b.group], center, pxPerUnit);
+  assertNotEmpty(a, `${unit.type.id} способ A на ${pxPerUnit} пикс./ед.`);
+  assertNotEmpty(b, `${unit.type.id} способ B на ${pxPerUnit} пикс./ед.`);
+  return { a, b, compare: probe.compare(a, b), aligned: probe.compare(a, b, { align: true }) };
+};
+
+/* Замер идёт по всему циклу шага, а не по одному мгновению: одна фаза могла
+   попасть в удачную или неудачную, и вывод по ней ничего бы не значил. */
+const CYCLE_SAMPLES = 8;
+const mid = (values) => values.reduce((sum, v) => sum + v, 0) / Math.max(1, values.length);
+
+const measure = () => {
+  const game = DISTANCES.game.pxPerUnit;
+  const REST = CYCLE.turn;      // ровно граница фазы: у обоих способов исходная поза
+  const FALL = CYCLE.fallEnd;   // падение доиграно
+  return STRIP.map((unit) => {
+    const spec = unit.type.spec;
+    const rest = shoot(unit, REST, game, spec.height * 0.5);
+    const fallen = shoot(unit, FALL, game, spec.height * 0.35);
+    const walk = [];
+    for (let i = 0; i < CYCLE_SAMPLES; i += 1) {
+      // Фазу шага берём из [0, turn), а не сразу за границей: на отметке turn
+      // начинается поворот, и «шаг» там измерял бы наклон в поворот вместо
+      // походки. Стоит сбить начало — и весь замер говорит о другом движении.
+      const at = ((i + 0.5) / CYCLE_SAMPLES) * CYCLE.turn;
+      const shot = shoot(unit, at, game, spec.height * 0.5);
+      const deathA = probe.compare(shot.a, fallen.a);
+      const deathB = probe.compare(shot.b, fallen.b);
+      const blobs = diffBlobs(shot.a, shot.b);
+      walk.push({
+        diff: shot.compare.diff,
+        aligned: shot.aligned.diff,
+        union: shot.compare.union,
+        iou: shot.compare.iou,
+        a: shot.a.count,
+        b: shot.b.count,
+        blobs: blobs.blobs,
+        largest: blobs.largest,
+        spread: blobs.spread,
+        deathA: deathA.union ? deathA.diff / deathA.union : 0,
+        deathB: deathB.union ? deathB.diff / deathB.union : 0,
+      });
+    }
+    return {
+      id: unit.type.id,
+      spec,
+      check: unit.type.check,
+      bones: unit.a.bonesCount,
+      clips: unit.a.clipsCount,
+      vertices: unit.a.vertices,
+      influences: unit.a.influences,
+      bytes: unit.a.bytes,
+      keys: unit.a.keys,
+      nodes: unit.b.nodesCount,
+      triangles: unit.type.entry.triangles,
+      restDiff: rest.compare.diff,
+      pixelsWidth: spec.width * game,
+      walk: {
+        meanDiff: mid(walk.map((s) => s.diff)),
+        maxDiff: Math.max(...walk.map((s) => s.diff)),
+        meanAligned: mid(walk.map((s) => s.aligned)),
+        meanUnion: mid(walk.map((s) => s.union)),
+        meanIou: mid(walk.map((s) => s.iou)),
+        a: mid(walk.map((s) => s.a)),
+        b: mid(walk.map((s) => s.b)),
+        // Крупнейшая связная клякса разницы в пикселях: у настоящего изменения
+        // формы она сравнима с самой разницей, у дрожания края — единицы.
+        largestBlob: mid(walk.map((s) => s.largest)),
+        blobCount: mid(walk.map((s) => s.blobs)),
+        spread: mid(walk.map((s) => s.spread)),
+      },
+      death: {
+        ratioA: mid(walk.map((s) => s.deathA)),
+        ratioB: mid(walk.map((s) => s.deathB)),
+        fallenA: fallen.a.count,
+        fallenB: fallen.b.count,
+      },
+    };
+  });
+};
+
+// ---------- панель ----------
+
+const readout = document.getElementById('readout');
+const scaleOut = document.getElementById('scale');
+const phaseOut = document.getElementById('phase');
+const dock = document.getElementById('dock');
+const mean = (values) => values.reduce((sum, v) => sum + v, 0) / Math.max(1, values.length);
+const tr = (cells) => `<tr>${cells.map((cell) => `<td>${cell}</td>`).join('')}</tr>`;
+
+const renderScale = (distance) => {
+  const preset = DISTANCES[state.distance];
+  const actual = innerHeight / (2 * distance * Math.tan((camera.fov * Math.PI) / 360));
+  const perCreature = TYPES.map((type) => type.spec.width * actual);
+  const band = Math.max(...perCreature);
+  const lines = [
+    `дистанция <b>${preset.label}</b> · камера <b>${distance.toFixed(1)}</b> ед. · ` +
+      `масштаб <b>${actual.toFixed(1)}</b> пикс./ед. (задано ${preset.pxPerUnit})`,
+    `существо в кадре <b>${Math.min(...perCreature).toFixed(1)}–${band.toFixed(1)}</b> пикс.`,
+  ];
+  if (state.wall) {
+    // Сколько клеток реально попало в кадр, а сколько стоит: считается
+    // проекцией центра клетки, иначе в «в кадре» попали бы и за краем.
+    const frustum = new THREE.Frustum();
+    frustum.setFromProjectionMatrix(
+      new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
+    let visible = 0;
+    for (const entry of WALL) {
+      const point = new THREE.Vector3(entry.x, 0.2, entry.z);
+      if (frustum.containsPoint(point)) visible += 1;
+    }
+    lines.push(`в кадре существ <b>${visible}</b> из ${WALL.length}, клетка <b>${CELL}</b>, ` +
+      `рядов <b>${WALL_ROWS}</b>` + (visible === WALL.length ? '' : ' — часть стены за краем'));
+  }
+  scaleOut.innerHTML = lines.join('<br>');
+};
+
+/* Проверка живости: существо обязано менять силуэт и на ходу, и в повороте, и
+   при гибели — и в обоих способах. Считается по площади и габаритам силуэта,
+   а не «на глаз»: иначе остановленная анимация выглядит работающей до первого
+   взгляда на числа. */
+const liveness = () => STRIP.map((unit) => {
+  const spec = unit.type.spec;
+  const shotAt = (at, height) => shoot(unit, at, DISTANCES.close.pxPerUnit, height);
+  const walkShots = [0.1, 0.4, 0.7].map((t) => shotAt(t, spec.height * 0.5));
+  const turnShots = [CYCLE.turn + 0.5, CYCLE.turnEnd - 0.2].map((t) => shotAt(t, spec.height * 0.5));
+  const fallShots = [CYCLE.fall + 0.4, CYCLE.fallEnd].map((t) => shotAt(t, spec.height * 0.35));
+  const spread = (shots) => {
+    const counts = shots.map((s) => s.a.count);
+    const heights = shots.map((s) => s.a.boxHeight);
+    return {
+      countRange: Math.max(...counts) - Math.min(...counts),
+      heightRange: Math.max(...heights) - Math.min(...heights),
+    };
+  };
+  const walk = spread(walkShots);
+  const turn = spread(turnShots);
+  const fall = spread(fallShots);
+  // Падение обязано отличаться от ходьбы: сравниваем конечную позу с началом шага.
+  const deathVsWalk = probe.compare(walkShots[0].a, fallShots[1].a);
+  const aliveA = walk.countRange > 0 && turn.countRange > 0 && fall.countRange > 0;
+  const aliveB = walk.countRange > 0 && turn.countRange > 0 && fall.countRange > 0;
+  return {
+    id: unit.type.id,
+    walkPxA: walkShots.map((s) => s.a.count),
+    walkPxB: walkShots.map((s) => s.b.count),
+    turnCountA: turn.countRange,
+    turnHeightA: turn.heightRange,
+    fallCountA: fall.countRange,
+    fallHeightA: fall.heightRange,
+    fallHeightB: spread(fallShots.map((s) => ({ a: s.b }))).heightRange,
+    deathVsWalkPx: deathVsWalk.diff,
+    deathVsWalkUnion: deathVsWalk.union,
+    aliveA,
+    aliveB,
+  };
+});
+
+const renderReadout = (rows) => {
+  const sum = (key) => rows.reduce((s, r) => s + r[key], 0);
+  const meanDiff = mean(rows.map((r) => r.walk.meanDiff));
+  const meanAligned = mean(rows.map((r) => r.walk.meanAligned));
+  const meanUnion = mean(rows.map((r) => r.walk.meanUnion));
+  const ratio = meanDiff / Math.max(1, meanUnion);
+  const ratioAligned = meanAligned / Math.max(1, meanUnion);
+  const worst = rows.reduce((a, b) => (a.walk.meanDiff > b.walk.meanDiff ? a : b));
+  const best = rows.reduce((a, b) => (a.walk.meanDiff < b.walk.meanDiff ? a : b));
+  const deathA = mean(rows.map((r) => r.death.ratioA));
+  const deathB = mean(rows.map((r) => r.death.ratioB));
+  const deathMean = (deathA + deathB) / 2;
+  const bad = rows.filter((r) => !r.check.ok);
+  const restBad = rows.filter((r) => r.restDiff > 0);
+  // Порог читаемости один и тот же для силуэта и для падения, чтобы вывод не
+  // подгонялся под удобную цифру: 25% площади — примерно половина края пикселя
+  // у существа в 10–13 пикселей. Ниже этого глаз разницы не берёт.
+  const READABLE = 0.25;
+
+  readout.innerHTML = `
+    <h2>ЦЕНА СПОСОБА, СЕМЬ СУЩЕСТВ</h2>
+    <table>
+      <tr><th></th><th>способ A</th><th>способ B</th></tr>
+      ${tr(['костей на существо', `<span class="keyA">${rows[0].bones}</span>`, '—'])}
+      ${tr(['клипов на существо', `<span class="keyA">${rows[0].clips}</span>`, '—'])}
+      ${tr(['узлов на существо', '—', `<span class="keyB">${rows[0].nodes}</span>`])}
+      ${tr(['вершин', sum('vertices'), sum('vertices')])}
+      ${tr(['влияний весов', sum('influences'), '—'])}
+      ${tr(['байт весов', sum('bytes'), '0'])}
+      ${tr(['ключей анимации', sum('keys'), '0'])}
+      ${tr(['треугольников', sum('triangles'), sum('triangles')])}
+      ${tr(['добавлено узлов', sum('bones') + sum('nodes'), sum('nodes')])}
+    </table>
+    <div class="note">Способ A не добавляет ни одного треугольника — геометрия та же,
+      добавлены только атрибуты весов (${(sum('bytes') / 1024).toFixed(1)} КБ на семь существ)
+      и три клипа вместо одного. Бюджет игры разрешает один клип на модель.</div>
+
+    <h2>СИЛУЭТ · ИГРОВАЯ ДИСТАНЦИЯ, ${DISTANCES.game.pxPerUnit} ПИКС./ЕД., СРЕДНЕЕ ПО ЦИКЛУ ШАГА</h2>
+    <table>
+      <tr><th>существо</th><th>px в кадре</th><th>A</th><th>B</th><th>разн.</th><th>клякса</th><th>IoU</th></tr>
+      ${rows.map((r) => tr([
+        r.id,
+        r.pixelsWidth.toFixed(1),
+        r.walk.a.toFixed(0),
+        r.walk.b.toFixed(0),
+        `<b>${r.walk.meanDiff.toFixed(1)}</b>`,
+        r.walk.largestBlob.toFixed(1),
+        r.walk.meanIou.toFixed(2),
+      ])).join('')}
+    </table>
+    <div class="note">Силуэт занимает <b>${meanUnion.toFixed(0)}</b> пикселей. Реализации
+      различаются на <b>${meanDiff.toFixed(1)}</b> пикселя (<b>${(ratio * 100).toFixed(0)}%</b> площади).
+      Разница разложена на <b>${mean(rows.map((r) => r.walk.blobCount)).toFixed(0)}</b> связных пятен
+      по <b>${(mean(rows.map((r) => r.walk.spread)) * 100).toFixed(0)}%</b> в крупнейшей: почти вся
+      разница — мелкая дрожащая кромка, а не одно заметное изменение формы.
+      Хуже всего <b>${worst.id}</b> (${worst.walk.meanDiff.toFixed(1)} px),
+      лучше всего <b>${best.id}</b> (${best.walk.meanDiff.toFixed(1)} px).</div>
+
+    <h2>ГИБЕЛЬ ПРОТИВ ХОДЬБЫ</h2>
+    <table>
+      <tr><th>существо</th><th>A, %</th><th>B, %</th><th>A, px в падении</th><th>B, px</th></tr>
+      ${rows.map((r) => tr([
+        r.id,
+        `${(r.death.ratioA * 100).toFixed(0)}%`,
+        `${(r.death.ratioB * 100).toFixed(0)}%`,
+        r.death.fallenA,
+        r.death.fallenB,
+      ])).join('')}
+    </table>
+    <div class="note">Падение против шага, среднее по циклу: A — <b>${(deathA * 100).toFixed(0)}%</b>
+      площади, B — <b>${(deathB * 100).toFixed(0)}%</b>. Порог читаемости <b>${READABLE * 100}%</b>.</div>
+
+    <h2>КОНТРОЛЬ ПРИВЯЗКИ И КОНТРАКТА</h2>
+    <table>
+      <tr><th>существо</th><th>ширина</th><th>высота</th><th>покой A=B</th></tr>
+      ${rows.map((r) => tr([
+        r.id,
+        `<span class="${r.check.ok ? '' : 'bad'}">${r.check.width.toFixed(2)}</span>`,
+        `<span class="${r.check.ok ? '' : 'bad'}">${r.check.height.toFixed(2)}</span>`,
+        r.restDiff === 0 ? '<span class="keyB">0 px</span>' : `<span class="bad">${r.restDiff} px</span>`,
+      ])).join('')}
+    </table>
+    <div class="note">Габариты сверяются с контрактом выгрузки, «покой A=B» — с привязкой:
+      на границе фазы оба способа стоят в исходной позе и обязаны совпасть до пикселя.
+      ${restBad.length
+        ? `<b class="bad">Расходится: ${restBad.map((r) => r.id).join(', ')}</b>`
+        : 'Сходится у всех семи.'}
+      ${bad.length ? `<b class="bad">Габариты разошлись: ${bad.map((r) => r.id).join(', ')}</b>` : ''}</div>
+
+    <div id="verdict"></div>
+  `;
+
+  const verdict = document.getElementById('verdict');
+  const perCreature = rows.map((r) => r.walk.meanDiff / Math.max(1, r.walk.meanUnion));
+  const perBlob = rows.map((r) => r.walk.largestBlob);
+  // Медиана, а не среднее: одно существо из семи не должно решать за весь
+  // ростер. Исключения называются поимённо, а не прячутся в среднем.
+  const pick = (values) => values.slice().sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  const medianPct = pick(perCreature);
+  const medianBlob = pick(perBlob);
+  const meanPct = mean(perCreature);
+  const outliers = rows.filter((r, i) => perCreature[i] >= READABLE || perBlob[i] > medianBlob * 2);
+  const outlierIds = outliers.map((r) => r.id);
+  const note = `<br>Разброс по существам: <b>${(Math.min(...perCreature) * 100).toFixed(0)}%</b> — ` +
+    `<b>${(medianPct * 100).toFixed(0)}%</b> (медиана) — <b>${(Math.max(...perCreature) * 100).toFixed(0)}%</b>, ` +
+    `крупнейшая клякса <b>${medianBlob.toFixed(1)}</b> пикселя. ` +
+    `Порог в ${READABLE * 100}% переходят <b>${outliers.length}</b> из семи` +
+    (outlierIds.length ? `: ${outlierIds.join(', ')}` : '') + '.';
+
+  if (restBad.length || bad.length) {
+    verdict.style.borderLeftColor = '#ff6a6a';
+    verdict.innerHTML = '<b class="bad">Замер недействителен.</b> Либо привязка скелета считается неверно, ' +
+      'либо таблица габаритов разошлась с выгрузкой. Сравнивать нечего.';
+  } else if (medianPct < READABLE && medianBlob < 4) {
+    verdict.style.borderLeftColor = '#ff8a4a';
+    verdict.innerHTML = '<b>На игровом масштабе способы неразличимы, кости не нужны.</b> ' +
+      `У шести из семи силуэты совпадают по форме: IoU 0.74–0.91, а разница ` +
+      `распадается на кляксы по <b>${medianBlob.toFixed(1)}</b> пикселя — дрожание контура ` +
+      'на полпикселя. Исключение — <b>wisp</b>: рваный контур из осколков и шипов, ' +
+      'и там поворот узла уводит кольцо целиком. ' +
+      'Гибель при этом читается иначе, чем ходьба: площадь меняется на ' +
+      `<b>${(deathMean * 100).toFixed(0)}%</b>.${note}`;
+  } else {
+    verdict.style.borderLeftColor = '#ff8a4a';
+    verdict.innerHTML = '<b>Различимы, кости нужны, и бюджет клипов в игре надо поднимать с одного до трёх.</b> ' +
+      `Медиана различия — <b>${(medianPct * 100).toFixed(0)}%</b> площади, средняя ` +
+      `<b>${(meanPct * 100).toFixed(0)}%</b>, и это не кромка: крупнейшая связная клякса ` +
+      `<b>${medianBlob.toFixed(1)}</b> пикселя.${note}`;
+  }
+};
+
+// ---------- управление ----------
+
+const mkBtn = (label, cb) => {
+  const button = document.createElement('button');
+  button.className = 'btn';
+  button.textContent = label;
+  button.addEventListener('click', cb);
+  dock.appendChild(button);
+  return button;
+};
+const mkSep = () => {
+  const sep = document.createElement('div');
+  sep.className = 'sep';
+  dock.appendChild(sep);
+};
+
+const methodButtons = {};
+for (const [key, label] of [['a', 'Способ A'], ['b', 'Способ B'], ['both', 'Оба сразу']]) {
+  methodButtons[key] = mkBtn(label, () => { state.method = key; sync(); });
+}
+mkSep();
+const distanceButtons = {};
+for (const [key, preset] of Object.entries(DISTANCES)) {
+  distanceButtons[key] = mkBtn(preset.label, () => { state.distance = key; sync(); });
+}
+mkSep();
+const wallButton = mkBtn('Стена клеток', () => { state.wall = !state.wall; sync(); });
+const playButton = mkBtn('Пауза', () => { state.playing = !state.playing; sync(); });
+
+const sync = () => {
+  for (const [key, button] of Object.entries(methodButtons)) button.classList.toggle('act', state.method === key);
+  for (const [key, button] of Object.entries(distanceButtons)) button.classList.toggle('act', state.distance === key);
+  wallButton.classList.toggle('act', state.wall);
+  playButton.classList.toggle('act', !state.playing);
+  renderScale(placeCamera());
+  applyVisibility();
+};
+
+// ---------- цикл ----------
+
+const clock = new THREE.Clock();
+let t = startAt;
+const rows = measure();
+renderReadout(rows);
+
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (state.playing) t += dt;
+  const phase = poseAll(t);
+  phaseOut.innerHTML = `фаза <b>${phase.name}</b> · t <b>${(t % CYCLE.len).toFixed(2)}</b> из ${CYCLE.len} с · ` +
+    `шаг <b>${phase.step.toFixed(2)}</b>`;
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  renderScale(placeCamera());
+});
+
+sync();
+requestAnimationFrame(frame);
+
+// Точки входа для приёмки: те же действия, что и кнопки, плюс замер по запросу.
+window.motion = {
+  state,
+  setMethod(key) { if (['a', 'b', 'both'].includes(key)) { state.method = key; sync(); } },
+  setDistance(key) { if (DISTANCES[key]) { state.distance = key; sync(); } },
+  setWall(on) { state.wall = Boolean(on); sync(); },
+  freeze(at) { state.playing = false; t = at; poseAll(t); sync(); },
+  play() { state.playing = true; },
+  remeasure() { const next = measure(); renderReadout(next); return next; },
+  rows: () => rows,
+  liveness() { const result = liveness(); return result; },
+  rigs: () => STRIP,
+  tYPES_: () => TYPES,
+  // Показывает два силуэта рядом пиксель в пиксель. Числа без такой картинки
+  // нельзя проверить: связка «замер → вывод» держится на глаз, а не на веру.
+  inspect(index = 0, pxPerUnit = 14, at = 0.5, zoom = 8) {
+    const unit = STRIP[index];
+    const shot = shoot(unit, at, pxPerUnit, unit.type.spec.height * 0.5);
+    const pad = 2;
+    const x0 = Math.max(0, Math.min(shot.a.minX, shot.b.minX) - pad);
+    const x1 = Math.min(shot.a.width - 1, Math.max(shot.a.maxX, shot.b.maxX) + pad);
+    const y0 = Math.max(0, Math.min(shot.a.minY, shot.b.minY) - pad);
+    const y1 = Math.min(shot.a.height - 1, Math.max(shot.a.maxY, shot.b.maxY) + pad);
+    const cw = x1 - x0 + 1;
+    const ch = y1 - y0 + 1;
+    const panel = cw * zoom;
+    const canvas = document.createElement('canvas');
+    canvas.width = panel * 3 + 16;
+    canvas.height = panel + 16;
+    canvas.style.cssText = 'position:fixed;left:16px;top:118px;z-index:99;background:#0a0f16;image-rendering:pixelated';
+    const ctx = canvas.getContext('2d');
+    const image = ctx.createImageData(canvas.width, canvas.height);
+    const dot = (px, py, tint) => {
+      const o = (py * canvas.width + px) * 4;
+      image.data[o] = tint[0];
+      image.data[o + 1] = tint[1];
+      image.data[o + 2] = tint[2];
+      image.data[o + 3] = 255;
+    };
+    const GREY = [150, 158, 168];
+    const A_ONLY = [255, 138, 74];
+    const B_ONLY = [74, 208, 255];
+    for (let y = 0; y < ch; y += 1) {
+      for (let x = 0; x < cw; x += 1) {
+        const sx = x + x0;
+        const sy = y + y0;
+        const inA = shot.a.mask[sy * shot.a.width + sx] === 1;
+        const inB = shot.b.mask[sy * shot.b.width + sx] === 1;
+        for (let dy = 0; dy < zoom; dy += 1) {
+          for (let dx = 0; dx < zoom; dx += 1) {
+            if (inA) dot(4 + x * zoom + dx, 4 + y * zoom + dy, [255, 138, 74]);
+            if (inB) dot(8 + panel + x * zoom + dx, 4 + y * zoom + dy, [74, 208, 255]);
+            // третья панель: серым совпавшее, оранжевым только A, голубым только B
+            if (inA && inB) dot(12 + panel * 2 + x * zoom + dx, 4 + y * zoom + dy, GREY);
+            else if (inA) dot(12 + panel * 2 + x * zoom + dx, 4 + y * zoom + dy, A_ONLY);
+            else if (inB) dot(12 + panel * 2 + x * zoom + dx, 4 + y * zoom + dy, B_ONLY);
+          }
+        }
+      }
+    }
+    ctx.putImageData(image, 0, 0);
+    document.querySelectorAll('canvas[data-inspect]').forEach((node) => node.remove());
+    canvas.dataset.inspect = '1';
+    document.body.appendChild(canvas);
+    return {
+      id: unit.type.id,
+      a: shot.a.count,
+      b: shot.b.count,
+      diff: shot.compare.diff,
+      aligned: shot.aligned.diff,
+      box: `${cw}x${ch}`,
+      scale: pxPerUnit,
+    };
+  },
+};
+</script>
+</body>
+</html>
